@@ -3,10 +3,8 @@ import Image from "next/image";
 
 const NAV_ITEMS = [
   { label: "홈", href: "/" },
-  { label: "트렌드 브리핑", href: "/briefing" },
   { label: "카테고리", href: "/category" },
   { label: "랭킹", href: "/ranking" },
-  { label: "즐겨찾기", href: "/bookmarks" },
   { label: "마이페이지", href: "/mypage" },
 ];
 

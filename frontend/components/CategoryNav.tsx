@@ -1,26 +1,31 @@
 import Link from "next/link";
 import Image from "next/image";
 
-const FEATURED_CATEGORIES = [
+export const CATEGORIES = [
   {
-    label: "디저트 메뉴",
-    desc: "지금 뜨는 디저트 트렌드",
+    label: "디저트",
+    desc: "디저트·빵류 트렌드",
     icon: "/images/strawberrycupcake.png",
-    href: "/category?type=dessert",
+    slug: "dessert",
   },
   {
     label: "음료",
     desc: "핫한 음료 & 레시피 트렌드",
     icon: "/images/coffee.png",
-    href: "/category?type=drink",
+    slug: "drink",
   },
   {
-    label: "마케팅·SNS",
+    label: "마케팅",
     desc: "SNS 마케팅 & 콘텐츠 아이디어",
     icon: "/images/star.png",
-    href: "/category?type=marketing",
+    slug: "marketing",
   },
 ];
+
+const FEATURED_CATEGORIES = CATEGORIES.map((category) => ({
+  ...category,
+  href: `/category?type=${category.slug}`,
+}));
 
 export default function CategoryNav() {
   return (
@@ -31,7 +36,7 @@ export default function CategoryNav() {
           href="/category"
           className="text-sm text-gray-400 transition-colors hover:text-strawberry"
         >
-          전체 보기 →
+          트렌드 더보기 →
         </Link>
       </div>
 

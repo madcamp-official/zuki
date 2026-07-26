@@ -1,18 +1,16 @@
+"use client";
+
 import Image from "next/image";
-import StatusBadge, { TrendStatus } from "./StatusBadge";
+import Link from "next/link";
+import StatusBadge from "./StatusBadge";
+import type { TrendItem } from "@/lib/trends";
 
-export interface Trend {
-  rank: number;
-  title: string;
-  status: TrendStatus;
-  image: string;
-  searchGrowth: number;
-  mentionGrowth: number;
-}
-
-export default function TrendCard({ trend }: { trend: Trend }) {
+export default function TrendCard({ trend }: { trend: TrendItem }) {
   return (
-    <div className="group flex flex-col overflow-hidden rounded-2xl bg-white shadow-sm transition-transform hover:-translate-y-1 hover:shadow-md">
+    <Link
+      href={`/trend/${trend.id}`}
+      className="group flex flex-col overflow-hidden rounded-2xl bg-white shadow-sm transition-transform hover:-translate-y-1 hover:shadow-md"
+    >
       <div className="relative aspect-square w-full overflow-hidden">
         <Image
           src={trend.image}
@@ -26,6 +24,7 @@ export default function TrendCard({ trend }: { trend: Trend }) {
         </span>
         <button
           aria-label="즐겨찾기"
+          onClick={(e) => e.preventDefault()}
           className="absolute right-2 top-2 grid h-7 w-7 place-items-center rounded-full bg-white/90"
         >
           <Image
@@ -53,11 +52,12 @@ export default function TrendCard({ trend }: { trend: Trend }) {
           <span>
             언급량{" "}
             <b className="font-number text-strawberry">
-              +{trend.mentionGrowth}%
+              {trend.mentionGrowth >= 0 ? "+" : ""}
+              {trend.mentionGrowth}%
             </b>
           </span>
         </div>
       </div>
-    </div>
+    </Link>
   );
 }
