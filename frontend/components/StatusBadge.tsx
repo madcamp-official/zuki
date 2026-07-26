@@ -1,33 +1,40 @@
-import Image from "next/image";
-
 export type TrendStatus = "태동기" | "상승기" | "전성기" | "하락기";
 
-const STATUS_ICON: Record<TrendStatus, string | null> = {
-  태동기: null,
-  상승기: "/images/up.png",
-  전성기: "/images/best.png",
-  하락기: "/images/low.png",
+const STATUS_STYLE: Record<TrendStatus, string> = {
+  태동기: "bg-blue-50 text-blue-500",
+  상승기: "bg-rose-100 text-strawberry",
+  전성기: "bg-yellow-100 text-amber-700",
+  하락기: "bg-gray-100 text-gray-500",
 };
 
-export default function StatusBadge({ status }: { status: TrendStatus }) {
-  const icon = STATUS_ICON[status];
+const STATUS_STYLE_ON_DARK: Record<TrendStatus, string> = {
+  태동기: "bg-white/25 text-white",
+  상승기: "bg-white/25 text-white",
+  전성기: "bg-white/25 text-white",
+  하락기: "bg-white/25 text-white",
+};
 
-  if (icon) {
-    return (
-      <span className="relative inline-block h-8 w-28 -my-1">
-        <Image
-          src={icon}
-          alt={status}
-          fill
-          className="object-contain object-left"
-        />
-      </span>
-    );
-  }
+const STATUS_ICON: Record<TrendStatus, string> = {
+  태동기: "🌱",
+  상승기: "🔥",
+  전성기: "👑",
+  하락기: "📉",
+};
+
+export default function StatusBadge({
+  status,
+  onDark = false,
+}: {
+  status: TrendStatus;
+  onDark?: boolean;
+}) {
+  const style = onDark ? STATUS_STYLE_ON_DARK[status] : STATUS_STYLE[status];
 
   return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-500">
-      <span aria-hidden>🌱</span>
+    <span
+      className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-bold ${style}`}
+    >
+      <span aria-hidden>{STATUS_ICON[status]}</span>
       {status}
     </span>
   );

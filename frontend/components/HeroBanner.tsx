@@ -41,7 +41,7 @@ export default function HeroBanner() {
 
           <div className="relative flex flex-col gap-3 p-6 sm:pl-14 md:p-8 md:pl-16">
             <div className="flex items-center justify-between">
-              <StatusBadge status="상승기" />
+              <StatusBadge status="상승기" onDark />
               <span className="flex items-center gap-1 rounded-full bg-white/20 px-3 py-1 text-xs font-semibold">
                 <span aria-hidden>💬</span> HOT TREND!
               </span>
