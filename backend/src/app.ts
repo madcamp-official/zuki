@@ -6,6 +6,7 @@ import adminRoutes from './routes/admin';
 import trendsRoutes, { categoriesRouter } from './routes/trends';
 import usersRoutes from './routes/users';
 import { errorHandler, notFoundHandler } from './middlewares/errorHandler';
+import { scheduleDailyCollect } from './jobs/dailyCollect';
 
 dotenv.config();
 
@@ -33,6 +34,7 @@ if (require.main === module) {
   app.listen(port, () => {
     console.log(`[trendpick-backend] listening on http://localhost:${port}`);
   });
+  scheduleDailyCollect();
 }
 
 export default app;
