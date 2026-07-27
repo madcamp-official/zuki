@@ -6,9 +6,24 @@ const WIDTH = 600;
 const HEIGHT = 200;
 const PADDING = 24;
 
-export default function TrendChart({ data }: { data: number[] }) {
+export default function TrendChart({
+  data,
+  labels,
+}: {
+  data: number[];
+  labels?: string[];
+}) {
+  if (data.length < 2) {
+    return (
+      <p className="py-10 text-center text-sm text-gray-400">
+        아직 검색량 추이 데이터가 쌓이지 않았어요
+      </p>
+    );
+  }
+
   const max = 100;
   const stepX = (WIDTH - PADDING * 2) / (data.length - 1);
+  const axisLabels = labels ?? MONTH_LABELS.slice(-data.length);
 
   const points = data.map((value, i) => {
     const x = PADDING + i * stepX;
@@ -49,8 +64,8 @@ export default function TrendChart({ data }: { data: number[] }) {
         ))}
       </svg>
       <div className="mt-2 flex justify-between font-number text-xs text-gray-400">
-        {MONTH_LABELS.map((label) => (
-          <span key={label}>{label}</span>
+        {axisLabels.map((label, i) => (
+          <span key={`${label}-${i}`}>{label}</span>
         ))}
       </div>
     </div>
