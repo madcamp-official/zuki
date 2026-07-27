@@ -9,7 +9,7 @@ export default function TrendCard({ trend }: { trend: TrendItem }) {
   return (
     <Link
       href={`/trend/${trend.id}`}
-      className="group flex flex-col overflow-hidden rounded-2xl bg-white shadow-sm transition-transform hover:-translate-y-1 hover:shadow-md"
+      className="group flex flex-col overflow-hidden rounded-2xl border border-[#f4e5dc] bg-white transition-transform hover:-translate-y-1 hover:shadow-md"
     >
       <div className="relative aspect-square w-full overflow-hidden">
         <Image
@@ -40,7 +40,7 @@ export default function TrendCard({ trend }: { trend: TrendItem }) {
         </div>
       </div>
 
-      <div className="flex flex-col gap-1.5 p-3">
+      <div className="flex flex-col gap-2 p-3">
         <h3 className="text-sm font-bold text-dark">{trend.title}</h3>
         <div className="flex justify-between text-[11px] text-gray-400">
           <span>

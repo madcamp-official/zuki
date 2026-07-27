@@ -3,30 +3,34 @@ import Image from "next/image";
 
 const NAV_ITEMS = [
   { label: "홈", href: "/" },
-  { label: "카테고리", href: "/category" },
+  { label: "트렌드 브리핑", href: "/category" },
   { label: "랭킹", href: "/ranking" },
+  { label: "즐겨찾기", href: "/mypage" },
   { label: "마이페이지", href: "/mypage" },
 ];
 
 export default function Header() {
   return (
-    <header className="sticky top-0 z-50 border-b border-black/5 bg-cream/90 backdrop-blur">
-      <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-3">
+    <header className="sticky top-0 z-50 border-b border-[#f3e7df] bg-cream/95 backdrop-blur">
+      <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-3 sm:px-6">
         <Link href="/" className="flex flex-col leading-tight">
-          <span className="flex items-center gap-1 font-heading text-2xl text-strawberry">
-            🍓 TrendPick
+          <span className="flex items-center gap-1 font-heading text-3xl text-strawberry">
+            TrendPick
+            <span className="relative h-7 w-7">
+              <Image src="/generated/icon-strawberry.png" alt="" fill className="object-contain" />
+            </span>
           </span>
           <span className="text-[11px] text-gray-400">
             사장님을 위한 트렌드 큐레이션
           </span>
         </Link>
 
-        <nav className="hidden items-center gap-6 text-sm font-medium text-gray-600 md:flex">
+        <nav className="hidden items-center gap-8 text-sm font-bold text-dark md:flex">
           {NAV_ITEMS.map((item) => (
             <Link
               key={item.href}
               href={item.href}
-              className="transition-colors hover:text-strawberry"
+              className="relative py-4 transition-colors hover:text-strawberry first:text-strawberry first:after:absolute first:after:bottom-0 first:after:left-1/2 first:after:h-0.5 first:after:w-5 first:after:-translate-x-1/2 first:after:rounded-full first:after:bg-strawberry"
             >
               {item.label}
             </Link>

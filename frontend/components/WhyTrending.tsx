@@ -9,8 +9,8 @@ const REASONS = [
 
 export default function WhyTrending() {
   return (
-    <section className="grid gap-4 overflow-hidden rounded-2xl bg-white p-5 shadow-sm sm:grid-cols-[1fr_1.3fr]">
-      <div className="relative aspect-[4/3] overflow-hidden rounded-xl">
+    <section className="grid gap-4 overflow-hidden rounded-[24px] border border-[#f4e3d7] bg-white/65 p-4 sm:grid-cols-[1fr_1.3fr]">
+      <div className="relative min-h-[240px] overflow-hidden rounded-[18px]">
         <Image
           src="https://images.unsplash.com/photo-1587314168485-3236d6710814?w=500&q=80"
           alt="딸기 크림 브리오슈"

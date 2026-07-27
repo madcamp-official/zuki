@@ -18,8 +18,11 @@ export default function Footer() {
     <footer className="mt-12 bg-white">
       <div className="mx-auto grid max-w-6xl gap-8 px-6 py-10 sm:grid-cols-[1.4fr_1fr_1fr_1fr_1.2fr]">
         <div>
-          <span className="flex items-center gap-1 font-heading text-xl text-strawberry">
-            🍓 TrendPick
+          <span className="flex items-center gap-1 font-heading text-2xl text-strawberry">
+            TrendPick
+            <span className="relative h-6 w-6">
+              <Image src="/generated/icon-strawberry.png" alt="" fill className="object-contain" />
+            </span>
           </span>
           <p className="mt-2 text-xs text-gray-400">
             사장님을 위한 트렌드 큐레이션
@@ -56,3 +59,4 @@ export default function Footer() {
     </footer>
   );
 }
+import Image from "next/image";

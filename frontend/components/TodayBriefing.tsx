@@ -10,19 +10,17 @@ const BRIEFINGS = [
 
 export default function TodayBriefing() {
   return (
-    <div className="flex h-full flex-col rounded-2xl bg-white p-5 shadow-sm">
+    <div className="flex h-full flex-col rounded-[24px] border border-[#f4e3d7] bg-white/65 p-5">
       <div className="mb-1 flex items-center justify-between">
         <h2 className="font-heading text-xl text-dark">오늘의 트렌드 브리핑</h2>
-        <span className="rounded-full bg-strawberry/10 px-2.5 py-1 text-[11px] font-semibold text-strawberry">
-          오늘 읽는데 3분
-        </span>
+        <span className="text-[11px] font-semibold text-dark">오늘 읽는데 3분!</span>
       </div>
 
-      <ul className="mt-3 flex flex-1 flex-col gap-1">
+      <ul className="mt-4 grid flex-1 grid-cols-5 gap-1">
         {BRIEFINGS.map((item) => (
           <li
             key={item.no}
-            className="flex items-center gap-3 rounded-xl p-2 transition-colors hover:bg-cream"
+            className="flex flex-col items-center gap-1 rounded-xl p-1 text-center transition-colors hover:bg-cream"
           >
             <span className="relative grid h-9 w-9 shrink-0 place-items-center rounded-full bg-rose-50">
               <Image
@@ -32,8 +30,8 @@ export default function TodayBriefing() {
                 className="object-contain p-1.5"
               />
             </span>
-            <span className="text-sm font-medium text-gray-700">
-              <span className="text-gray-400">{item.no} · </span>
+            <span className="text-[10px] font-medium leading-tight text-gray-700">
+              <span className="block text-strawberry">{item.no}</span>
               {item.label}
             </span>
           </li>

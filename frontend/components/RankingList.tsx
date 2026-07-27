@@ -3,11 +3,11 @@ import { TRENDS } from "@/lib/trends";
 
 export default function RankingList() {
   return (
-    <div className="flex h-full flex-col rounded-2xl bg-white p-5 shadow-sm">
+    <div className="flex h-full flex-col rounded-[24px] border border-[#f4e3d7] bg-white/70 p-5">
       <h2 className="mb-1 font-heading text-xl text-dark">
         트렌드 랭킹 TOP 10 <span aria-hidden>📌</span>
       </h2>
-      <ul className="mt-3 flex flex-col gap-3">
+      <ul className="mt-3 flex flex-col gap-2.5">
         {TRENDS.map((item) => (
           <li key={item.id}>
             <Link
