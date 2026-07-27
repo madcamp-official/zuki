@@ -8,7 +8,8 @@
     "dev": "ts-node-dev --respawn --transpile-only src/app.ts",
     "build": "tsc",
     "start": "node dist/app.js",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:apis": "ts-node --transpile-only -r dotenv/config src/scripts/testApis.ts"
   },
   "dependencies": {
     "cors": "^2.8.5",

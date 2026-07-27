@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { query } from '../db/client';
 import { ApiError } from '../middlewares/errorHandler';
+import { runDailyCollect } from '../jobs/dailyCollect';
 
 /**
  * POST /api/admin/trends
@@ -44,4 +45,47 @@ export async function publishTrend(req: Request, res: Response) {
   }
 
   res.json({ trend });
+}
+
+/**
+ * POST /api/admin/keywords
+ * 트렌드 후보/연결 키워드 등록 (기획서 4번, keywords 테이블)
+ * trendId 없이 등록하면 아직 카드로 승격 전인 "후보 키워드"로 취급됨 (스키마 12번 주석 참고)
+ */
+export async function createKeyword(req: Request, res: Response) {
+  const { keyword, trendId } = req.body;
+
+  if (!keyword) {
+    throw new ApiError(400, 'keyword는 필수입니다.');
+  }
+
+  const [row] = await query(
+    `INSERT INTO keywords (keyword, trend_id) VALUES ($1, $2)
+     ON CONFLICT (keyword) DO UPDATE SET trend_id = COALESCE(EXCLUDED.trend_id, keywords.trend_id)
+     RETURNING id, keyword, trend_id, created_at`,
+    [keyword, trendId ?? null]
+  );
+
+  res.status(201).json({ keyword: row });
+}
+
+/**
+ * GET /api/admin/keywords
+ * 등록된 키워드 목록 확인용 (테스트/운영 확인용)
+ */
+export async function listKeywords(_req: Request, res: Response) {
+  const rows = await query(
+    `SELECT id, keyword, trend_id, created_at FROM keywords ORDER BY created_at DESC`
+  );
+  res.json({ keywords: rows });
+}
+
+/**
+ * POST /api/admin/collect
+ * jobs/dailyCollect.ts의 배치를 크론 스케줄 기다리지 않고 즉시 실행 (테스트/운영 확인용)
+ * 실제 운영에서는 node-cron이 매일 새벽 3시에 자동으로 호출함 (기획서 11-4 ④)
+ */
+export async function triggerCollect(_req: Request, res: Response) {
+  const summary = await runDailyCollect();
+  res.json({ summary });
 }
