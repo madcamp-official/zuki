@@ -1,23 +1,36 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import TrendCard from "@/components/TrendCard";
 import { CATEGORIES } from "@/components/CategoryNav";
-import { TRENDS, type CategorySlug } from "@/lib/trends";
+import type { CategorySlug, TrendItem } from "@/lib/trends";
 import { REGIONS, REGION_SI_LIST } from "@/lib/regions";
+import { fetchTrends } from "@/lib/api";
 
-const BOOKMARKED_IDS = [
-  "strawberry-cream-brioche",
-  "matcha-cream-roll",
-  "vanilla-cream-latte",
-];
+// 즐겨찾기 API는 로그인 인증이 붙기 전까지, 실제 DB 트렌드 중 상위 3개를
+// "즐겨찾기한 것처럼" 보여준다 (더 이상 lib/trends.ts의 옛 목업 이미지를 쓰지 않음)
+const BOOKMARK_PREVIEW_COUNT = 3;
 
 export default function MyPage() {
   const [interests, setInterests] = useState<CategorySlug[]>(["dessert"]);
   const [regionSi, setRegionSi] = useState<string | null>("대전");
   const [regionGu, setRegionGu] = useState<string | null>(null);
+  const [bookmarked, setBookmarked] = useState<TrendItem[]>([]);
+  const [loadingBookmarks, setLoadingBookmarks] = useState(true);
 
-  const bookmarked = TRENDS.filter((trend) => BOOKMARKED_IDS.includes(trend.id));
+  useEffect(() => {
+    let cancelled = false;
+    fetchTrends({ limit: BOOKMARK_PREVIEW_COUNT })
+      .then((data) => {
+        if (!cancelled) setBookmarked(data);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingBookmarks(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const toggleInterest = (slug: CategorySlug) => {
     setInterests((prev) =>
@@ -36,7 +49,9 @@ export default function MyPage() {
 
       <section className="rounded-2xl bg-white p-6 shadow-sm">
         <h2 className="font-heading text-2xl text-dark">즐겨찾기</h2>
-        {bookmarked.length === 0 ? (
+        {loadingBookmarks ? (
+          <p className="mt-4 text-base text-gray-400">불러오는 중이에요...</p>
+        ) : bookmarked.length === 0 ? (
           <p className="mt-4 text-base text-gray-400">
             아직 즐겨찾기한 트렌드가 없어요
           </p>
