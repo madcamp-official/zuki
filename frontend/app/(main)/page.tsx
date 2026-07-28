@@ -20,21 +20,21 @@ export default async function Home() {
 
       <CategoryNav />
 
-      <section className="rounded-[28px] border border-[#f4e3d7] bg-white/45 p-5 sm:p-6">
+      <section className="rounded-[28px] border border-[#f1dfd3] bg-[#fffdf9] p-5 shadow-[0_10px_30px_rgba(139,62,35,0.035)] sm:p-6">
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="flex items-center gap-1.5 font-heading text-xl text-dark">
+          <h2 className="flex items-center gap-1.5 font-heading text-2xl text-dark">
             이번 주 HOT 트렌드 <span aria-hidden>🔥</span>
           </h2>
           <div className="flex gap-2">
             <button
               aria-label="이전 트렌드"
-              className="grid h-8 w-8 place-items-center rounded-full bg-white text-gray-400 shadow-sm transition-colors hover:text-strawberry"
+              className="grid h-9 w-9 place-items-center rounded-full border border-[#f4e3d7] bg-white text-gray-400 shadow-sm transition-colors hover:text-strawberry"
             >
               ←
             </button>
             <button
               aria-label="다음 트렌드"
-              className="grid h-8 w-8 place-items-center rounded-full bg-white text-gray-400 shadow-sm transition-colors hover:text-strawberry"
+              className="grid h-9 w-9 place-items-center rounded-full border border-[#f4e3d7] bg-white text-gray-400 shadow-sm transition-colors hover:text-strawberry"
             >
               →
             </button>

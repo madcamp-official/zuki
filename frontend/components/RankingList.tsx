@@ -3,8 +3,8 @@ import type { TrendItem } from "@/lib/trends";
 
 export default function RankingList({ trends }: { trends: TrendItem[] }) {
   return (
-    <div className="flex h-full flex-col rounded-[24px] border border-[#f4e3d7] bg-white/70 p-5">
-      <h2 className="mb-1 font-heading text-xl text-dark">
+    <div className="flex h-full flex-col rounded-[24px] border border-[#f1dfd3] bg-[#fffdf9] p-5 shadow-[0_10px_30px_rgba(139,62,35,0.035)]">
+      <h2 className="mb-1 font-heading text-2xl text-dark">
         트렌드 랭킹 TOP 10 <span aria-hidden>📌</span>
       </h2>
       {trends.length === 0 ? (
@@ -12,12 +12,12 @@ export default function RankingList({ trends }: { trends: TrendItem[] }) {
           아직 등록된 트렌드가 없어요
         </p>
       ) : (
-        <ul className="mt-3 flex flex-col gap-2.5">
+      <ul className="mt-3 flex flex-col gap-2.5">
           {trends.map((item) => (
             <li key={item.id}>
               <Link
                 href={`/trend/${item.id}`}
-                className="flex items-center gap-3 text-sm"
+                className="flex items-center gap-3 text-[13px]"
               >
                 <span
                   className={`grid h-6 w-6 shrink-0 place-items-center rounded-full font-number text-xs font-bold ${

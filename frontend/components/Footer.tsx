@@ -15,8 +15,8 @@ const FOOTER_COLUMNS = [
 
 export default function Footer() {
   return (
-    <footer className="mt-12 bg-white">
-      <div className="mx-auto grid max-w-6xl gap-8 px-6 py-10 sm:grid-cols-[1.4fr_1fr_1fr_1fr_1.2fr]">
+    <footer className="relative mt-8 bg-white">
+      <div className="mx-auto grid max-w-6xl gap-8 px-6 py-10 sm:grid-cols-[1.4fr_1fr_1fr_1fr] lg:pr-64">
         <div>
           <span className="flex items-center gap-1 font-heading text-2xl text-strawberry">
             TrendPick
@@ -45,13 +45,15 @@ export default function Footer() {
           </div>
         ))}
 
-        <div className="rounded-2xl bg-cream p-4 text-xs text-gray-500">
-          <p className="font-bold text-dark">오늘의 한 줄</p>
-          <p className="mt-2 leading-relaxed">
-            작은 변화가 메뉴를 빛나게 해요!
-          </p>
-        </div>
       </div>
+
+      <aside className="mx-auto mb-6 w-[210px] rounded-[18px] border border-[#f3d46d] bg-[#fff0b7] p-5 text-center text-sm text-[#754016] shadow-sm lg:absolute lg:bottom-6 lg:right-[max(2rem,calc((100vw-72rem)/2))] lg:mb-0">
+        <p className="font-bold">오늘의 한 줄</p>
+        <p className="mt-2 font-semibold leading-relaxed">작은 변화가<br />매출을 빛나게 해요!</p>
+        <span className="absolute -bottom-5 -right-3 h-12 w-12">
+          <Image src="/generated/strawberry-large-v2.png" alt="" fill className="object-contain" />
+        </span>
+      </aside>
 
       <div className="border-t border-black/5 px-6 py-4 text-center text-[11px] text-gray-400">
         © 2026 TrendPick. All rights reserved.
