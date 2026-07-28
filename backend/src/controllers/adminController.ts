@@ -381,8 +381,10 @@ export async function triggerAutoTrends(req: Request, res: Response) {
   const minSignal = Number(req.body?.minSignal ?? 40);
   // 이미지 생성은 호출당 과금이라 기본은 켜두되 끌 수 있게 한다
   const withImage = req.body?.withImage !== false;
+  // 시드 더미를 걷어내고 실제 수집 데이터만 보이게 할 때 사용. 기본은 안전하게 false
+  const retireManual = req.body?.retireManual === true;
 
-  const summary = await refreshAutoTrends(topN, minSignal, withImage);
+  const summary = await refreshAutoTrends(topN, minSignal, withImage, retireManual);
   res.json({ summary });
 }
 

@@ -21,8 +21,10 @@ export interface AutoTrendSummary {
   created: number;
   /** 이미 카드가 있어 문구만 갱신한 수 */
   refreshed: number;
-  /** 순위에서 밀려 내린 카드 수 */
+  /** 순위에서 밀려 내린 자동 카드 수 */
   retired: number;
+  /** 함께 내린 수동 더미 카드 수 (retireManual=true일 때만) */
+  retiredManual: number;
   errors: { keyword: string; message: string }[];
   trends: {
     id: number;
@@ -55,11 +57,16 @@ const num = (v: string | null): number | null => (v === null ? null : Number(v))
  * @param topN 유지할 자동 카드 수
  * @param minSignal 이 점수 미만은 카드로 만들지 않는다 (노이즈 배제)
  * @param withImage OpenAI 이미지 생성 여부. 호출당 과금되므로 끌 수 있게 둔다
+ * @param retireManual 손으로 만든 카드(더미 포함)도 함께 내릴지.
+ *   기본은 false — 에디터가 공들여 쓴 카드를 실수로 날리면 안 되기 때문이다.
+ *   시드 더미를 걷어내고 실제 수집 데이터만 보이게 할 때 true로 쓴다.
+ *   삭제가 아니라 발행 취소라 언제든 되살릴 수 있다.
  */
 export async function refreshAutoTrends(
   topN = 10,
   minSignal = 40,
-  withImage = true
+  withImage = true,
+  retireManual = false
 ): Promise<AutoTrendSummary> {
   const startedAt = new Date();
   const summary: AutoTrendSummary = {
@@ -69,6 +76,7 @@ export async function refreshAutoTrends(
     created: 0,
     refreshed: 0,
     retired: 0,
+    retiredManual: 0,
     errors: [],
     trends: [],
   };
@@ -240,11 +248,25 @@ export async function refreshAutoTrends(
   );
   summary.retired = retired.length;
 
+  // 요청 시에만 수동 카드도 내린다.
+  // 자동 카드가 하나도 안 만들어졌다면 내리지 않는다 — 그러면 사이트가 통째로
+  // 비어버리기 때문이다. 실제 데이터로 갈아끼우는 게 목적이지 비우는 게 아니다.
+  if (retireManual && keptTrendIds.length > 0) {
+    const retiredManual = await query<{ id: number }>(
+      `UPDATE trends
+          SET is_published = false, updated_at = now()
+        WHERE is_auto = false AND is_published = true
+        RETURNING id`
+    );
+    summary.retiredManual = retiredManual.length;
+  }
+
   const finishedAt = new Date();
   summary.finishedAt = finishedAt.toISOString();
 
   console.log(
-    `[autoTrends] 완료: 생성 ${summary.created} / 갱신 ${summary.refreshed} / 내림 ${summary.retired}`
+    `[autoTrends] 완료: 생성 ${summary.created} / 갱신 ${summary.refreshed} / ` +
+      `내림 ${summary.retired} / 수동카드 내림 ${summary.retiredManual}`
   );
   return summary;
 }
