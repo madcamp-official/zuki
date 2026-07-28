@@ -46,7 +46,8 @@ export default function TrendCard({ trend }: { trend: TrendItem }) {
           <span>
             검색량{" "}
             <b className="mt-0.5 block font-number text-base text-strawberry">
-              +{trend.searchGrowth}%
+              {trend.searchGrowth >= 0 ? "+" : ""}
+              {trend.searchGrowth}%
             </b>
           </span>
           <span>
