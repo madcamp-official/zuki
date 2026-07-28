@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { query } from '../db/client';
 import { ApiError } from '../middlewares/errorHandler';
 import { runDailyCollect } from '../jobs/dailyCollect';
+import { refreshAutoTrends } from '../jobs/autoTrends';
 import {
   DiscoveredKeyword,
   DiscoveryResult,
@@ -363,6 +364,26 @@ export async function listRisingKeywords(req: Request, res: Response) {
       'mention_growth_rate가 null이면 14일 구간을 못 덮었거나 표본이 10건 미만이라 계산을 포기한 것입니다(억지로 값을 내지 않습니다). ' +
       'view_velocity는 최근 30일 영상들의 일평균 조회수 합으로, 짧은 시간에 조회수가 터지는 정도를 나타냅니다.',
   });
+}
+
+/**
+ * POST /api/admin/trends/auto-refresh
+ * 상위 트렌드를 자동으로 카드화하고, 순위에서 밀린 자동 카드는 내린다.
+ *
+ * body: { topN?: number, minSignal?: number, withImage?: boolean }
+ *
+ * 문구는 실제 뉴스·블로그를 검색해 그 내용을 근거로 생성하며,
+ * 근거가 된 게시물 링크를 카드에 함께 저장한다(evidence).
+ * 에디터가 직접 만든 카드(is_auto=false)의 문구는 덮어쓰지 않는다.
+ */
+export async function triggerAutoTrends(req: Request, res: Response) {
+  const topN = Math.min(Number(req.body?.topN ?? 10), 30);
+  const minSignal = Number(req.body?.minSignal ?? 40);
+  // 이미지 생성은 호출당 과금이라 기본은 켜두되 끌 수 있게 한다
+  const withImage = req.body?.withImage !== false;
+
+  const summary = await refreshAutoTrends(topN, minSignal, withImage);
+  res.json({ summary });
 }
 
 /**

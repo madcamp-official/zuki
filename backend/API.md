@@ -140,6 +140,17 @@
 }
 ```
 
+자동 생성 카드는 `is_auto: true`와 함께 **`evidence`** 를 돌려줍니다 — 문구의 근거가 된 실제 게시물입니다.
+
+```json
+"evidence": [
+  { "title": "편의점 3사, 이달 신제품으로...", "excerpt": "...",
+    "link": "https://...", "date": "2026-07-25", "corpus": "news" }
+]
+```
+
+상세 화면에 "관련 기사" 같은 섹션으로 링크를 걸어주면, 사장님이 원문을 직접 확인할 수 있습니다.
+
 > **"검색량 추이" 그래프는 `searchIndexHistory`를 쓰세요.**
 > `scoreHistory`는 랭킹 점수 이력이라 "네이버 데이터랩 기준 상대 검색지수(0~100)"라는 화면 라벨과 맞지 않습니다.
 
@@ -337,6 +348,48 @@ npm run grant:admin -- someone@example.com editor    # editor 부여
 ```
 
 `title`, `categoryId`는 필수. 없으면 `400`.
+
+### POST /api/admin/trends/auto-refresh
+
+급상승 후보 중 신호가 강한 것들을 **트렌드 카드로 자동 생성**하고, 순위에서 밀린 자동 카드는 내립니다. 항상 최신 상위 N개가 노출됩니다.
+
+```json
+{ "topN": 10, "minSignal": 40, "withImage": true }
+```
+
+| 항목 | 기본값 | 설명 |
+|---|---|---|
+| `topN` | 10 (최대 30) | 유지할 자동 카드 수 |
+| `minSignal` | 40 | 이 점수 미만은 카드로 만들지 않음 (노이즈 배제) |
+| `withImage` | true | OpenAI 이미지 생성. 카드당 과금되므로 끌 수 있음 |
+
+```json
+{
+  "summary": {
+    "considered": 10, "created": 6, "refreshed": 3, "retired": 2,
+    "trends": [
+      { "id": 41, "keyword": "씬쿠키", "signal": 68.3, "generated": true, "evidenceCount": 8 }
+    ],
+    "errors": []
+  }
+}
+```
+
+**문구는 지어내지 않습니다.**
+
+각 키워드로 네이버 **뉴스·블로그를 검색해 실제 게시물을 읽고**, 그 안에 있는 내용과 우리가 측정한 수치만으로 요약을 씁니다.
+
+```
+X "최근 일본 디저트 유행과 맞물려"        <- 아무 자료에도 없는 창작
+O "편의점 3사가 이달 신제품으로 출시했고"  <- 뉴스 기사에 실제로 있는 내용
+O "최근 7일 블로그 게시량이 2배 늘었습니다" <- 우리가 측정한 값
+```
+
+게시물에 원인이 안 나오면 **추측하지 않고 지표만 서술**합니다. 근거가 된 게시물 링크는 카드의 `evidence` 필드에 저장되어 `GET /api/trends/:id`로 조회할 수 있습니다 — 사장님이 원문을 확인할 수 있어야 신뢰할 수 있는 정보가 되기 때문입니다.
+
+**에디터가 직접 만든 카드(`is_auto=false`)의 문구는 덮어쓰지 않습니다.** 순위에서 밀린 자동 카드는 삭제가 아니라 발행 취소(`is_published=false`)되므로, 다시 순위에 들면 되살아납니다.
+
+> OpenAI 키(`OPENAI_API_KEY`)가 없으면 LLM 대신 규칙 기반 문구로 폴백합니다(`generated: false`). 근거 링크는 그래도 저장됩니다.
 
 ### PATCH /api/admin/trends/:id/publish
 

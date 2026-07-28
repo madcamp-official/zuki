@@ -17,10 +17,20 @@ const SEARCH_BASE = 'https://openapi.naver.com/v1/search';
 
 export type NaverSearchCorpus = 'blog' | 'cafearticle' | 'news';
 
+export interface NaverSearchItem {
+  title: string;
+  /** 본문 발췌. 검색어 주변 문맥이 담겨 있어 "왜 뜨는지"의 단서가 된다 */
+  description: string;
+  link: string;
+  postDate: string | null;
+}
+
 export interface NaverSearchResult {
   corpus: NaverSearchCorpus;
   query: string;
   titles: string[];
+  /** 제목 + 본문 발췌 + 링크. 근거 수집용 */
+  items: NaverSearchItem[];
   /**
    * 게시일(YYYY-MM-DD) 목록. 블로그 코퍼스만 postdate를 준다.
    * 카페글은 cafename/cafeurl만 오고 날짜가 없어 빈 배열이 된다.
@@ -79,19 +89,27 @@ export async function searchNaver(
 
   const json = (await res.json()) as {
     total?: number;
-    items?: { title: string; postdate?: string }[];
+    items?: { title: string; description?: string; link?: string; postdate?: string }[];
   };
-  const items = json.items ?? [];
+  const rawItems = json.items ?? [];
+
+  const toIsoDate = (d?: string) =>
+    d && /^\d{8}$/.test(d) ? `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}` : null;
 
   return {
     corpus,
     query,
-    titles: items.map((i) => stripHtml(i.title)),
+    titles: rawItems.map((i) => stripHtml(i.title)),
+    items: rawItems.map((i) => ({
+      title: stripHtml(i.title),
+      description: stripHtml(i.description ?? ''),
+      link: i.link ?? '',
+      postDate: toIsoDate(i.postdate),
+    })),
     // postdate는 'YYYYMMDD' 형식으로 온다
-    postDates: items
-      .map((i) => i.postdate)
-      .filter((d): d is string => !!d && /^\d{8}$/.test(d))
-      .map((d) => `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}`),
+    postDates: rawItems
+      .map((i) => toIsoDate(i.postdate))
+      .filter((d): d is string => d !== null),
     total: json.total ?? 0,
   };
 }

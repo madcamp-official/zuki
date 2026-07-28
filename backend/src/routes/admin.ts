@@ -6,6 +6,7 @@ import {
   listKeywords,
   listRisingKeywords,
   publishTrend,
+  triggerAutoTrends,
   triggerCollect,
 } from '../controllers/adminController';
 import { requireAdmin, requireAuth } from '../middlewares/auth';
@@ -37,6 +38,8 @@ if (authDisabled) {
 const adminGuard: RequestHandler[] = authDisabled ? [] : [requireAuth, requireAdmin];
 
 router.post('/trends', ...adminGuard, asyncHandler(createTrend));
+// '/trends/auto-refresh'는 '/trends/:id/publish'보다 먼저 선언해야 가려지지 않는다
+router.post('/trends/auto-refresh', ...adminGuard, asyncHandler(triggerAutoTrends));
 router.patch('/trends/:id/publish', ...adminGuard, asyncHandler(publishTrend));
 router.post('/keywords', ...adminGuard, asyncHandler(createKeyword));
 router.get('/keywords', ...adminGuard, asyncHandler(listKeywords));
