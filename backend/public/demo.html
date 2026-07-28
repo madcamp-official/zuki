@@ -111,6 +111,37 @@
   <div class="panel active" id="panel-public">
 
     <div class="card">
+      <h2><span class="method">AUTH</span>Supabase 로그인 / 회원가입</h2>
+      <p class="hint">
+        Supabase Auth로 직접 로그인해 access token을 받습니다. 이 토큰이 아래 즐겨찾기·프로필 요청에
+        <code>Authorization: Bearer</code> 헤더로 자동 첨부됩니다. 프론트엔드도 같은 방식으로 붙이면 됩니다.
+      </p>
+      <div class="row">
+        <div><label>이메일</label><input id="authEmail" type="email" placeholder="test@example.com" /></div>
+        <div><label>비밀번호</label><input id="authPassword" type="password" placeholder="6자 이상" /></div>
+      </div>
+      <button class="go" onclick="doAuth('login')">로그인</button>
+      <button class="go ghost" onclick="doAuth('signup')">회원가입</button>
+      <button class="go ghost" onclick="doLogout()">로그아웃</button>
+      <div id="authStatus" class="status-line" style="margin-top:12px">
+        <span class="dot" id="authDot"></span><span id="authText">로그아웃 상태</span>
+      </div>
+      <pre class="out" id="authOut"></pre>
+    </div>
+
+    <div class="card">
+      <h2><span class="method">GET/PATCH</span>/api/users/me — 내 프로필</h2>
+      <div class="row">
+        <div><label>매장명</label><input id="pStoreName" /></div>
+        <div><label>시/도</label><input id="pRegionSi" placeholder="예: 대전광역시" /></div>
+        <div><label>시/군/구</label><input id="pRegionGu" placeholder="예: 유성구" /></div>
+      </div>
+      <button class="go" onclick="loadProfile()">조회</button>
+      <button class="go ghost" onclick="saveProfile()">저장</button>
+      <pre class="out" id="profileOut"></pre>
+    </div>
+
+    <div class="card">
       <h2><span class="method">GET</span>/api/trends — 트렌드 피드</h2>
       <div class="row">
         <div>
@@ -155,9 +186,8 @@
 
     <div class="card">
       <h2><span class="method">GET/POST/DELETE</span>/api/users/me/bookmarks — 즐겨찾기</h2>
-      <p class="hint">인증이 아직 없어서 <code>x-user-id</code> 헤더로 사용자를 구분합니다. 아래 값이 그 헤더로 전송됩니다.</p>
+      <p class="hint">로그인이 필요합니다. 위에서 로그인하면 토큰이 자동으로 붙습니다.</p>
       <div class="row">
-        <div><label>x-user-id (UUID)</label><input id="userId" /></div>
         <div><label>트렌드 ID</label><input id="bmTrendId" type="number" /></div>
       </div>
       <button class="go" onclick="bookmark('POST')">추가</button>
@@ -177,6 +207,15 @@
 
   <!-- ========== 관리자 API ========== -->
   <div class="panel" id="panel-admin">
+
+    <div class="card" style="border-color: var(--accent)">
+      <h2>관리자 권한 필요</h2>
+      <p class="hint" style="margin:0">
+        아래 기능은 <strong>공개 API 탭에서 로그인한 계정의 role이 editor 또는 admin</strong>이어야 동작합니다.
+        이 API들은 OpenAI 이미지 생성·외부 API 호출로 실제 비용이 나가서 열어둘 수 없습니다.<br />
+        권한 부여: <code>cd backend &amp;&amp; npm run grant:admin -- 이메일</code> (해당 계정으로 먼저 회원가입 필요)
+      </p>
+    </div>
 
     <div class="card">
       <h2><span class="method">POST</span>/api/admin/trends — 트렌드 카드 등록</h2>
@@ -283,14 +322,121 @@
 // 이 페이지는 Express가 같은 오리진에서 서빙하므로 상대 경로로 호출하면 CORS 이슈가 없다.
 const API = '';
 
-// x-user-id: 인증 붙기 전 임시 사용자 식별자. 새로고침해도 같은 사용자로 취급되게 localStorage에 보관.
-function getUserId() {
-  let id = localStorage.getItem('trendpick_demo_user');
-  if (!id) {
-    id = crypto.randomUUID();
-    localStorage.setItem('trendpick_demo_user', id);
+// ---- Supabase Auth ----
+// access token은 localStorage에 보관해 새로고침해도 로그인이 유지되게 한다.
+let supabaseConfig = { supabaseUrl: null, supabaseAnonKey: null };
+
+function getToken() {
+  return localStorage.getItem('trendpick_access_token');
+}
+
+function setToken(token, email) {
+  if (token) {
+    localStorage.setItem('trendpick_access_token', token);
+    if (email) localStorage.setItem('trendpick_email', email);
+  } else {
+    localStorage.removeItem('trendpick_access_token');
+    localStorage.removeItem('trendpick_email');
   }
-  return id;
+  renderAuthStatus();
+}
+
+function renderAuthStatus() {
+  const token = getToken();
+  const email = localStorage.getItem('trendpick_email');
+  document.getElementById('authDot').className = 'dot' + (token ? ' ok' : '');
+  document.getElementById('authText').textContent = token
+    ? `로그인됨${email ? ' — ' + email : ''}`
+    : '로그아웃 상태';
+}
+
+/** 인증이 필요한 요청에 붙일 헤더 */
+function authHeaders() {
+  const token = getToken();
+  return token ? { Authorization: 'Bearer ' + token } : {};
+}
+
+async function doAuth(mode) {
+  const email = document.getElementById('authEmail').value.trim();
+  const password = document.getElementById('authPassword').value;
+  if (!email || !password) return show('authOut', '이메일과 비밀번호를 입력하세요.');
+
+  if (!supabaseConfig.supabaseUrl || !supabaseConfig.supabaseAnonKey) {
+    return show('authOut',
+      'Supabase 설정이 없습니다. 백엔드 환경변수 SUPABASE_URL / SUPABASE_ANON_KEY를 확인하세요.');
+  }
+
+  // Supabase Auth REST를 직접 호출한다 (프론트에서는 supabase-js가 같은 일을 한다)
+  const base = supabaseConfig.supabaseUrl + '/auth/v1';
+  const url = mode === 'signup' ? base + '/signup' : base + '/token?grant_type=password';
+
+  show('authOut', mode === 'signup' ? '회원가입 중…' : '로그인 중…');
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: supabaseConfig.supabaseAnonKey,
+      },
+      body: JSON.stringify({ email, password }),
+    });
+    const body = await res.json();
+
+    if (!res.ok) {
+      return show('authOut', '실패: ' + (body.error_description || body.msg || body.message || res.status));
+    }
+
+    if (body.access_token) {
+      setToken(body.access_token, email);
+      show('authOut', {
+        message: mode === 'signup' ? '회원가입 + 로그인 완료' : '로그인 완료',
+        user_id: body.user?.id,
+        expires_in: body.expires_in,
+      });
+      loadProfile();
+    } else {
+      // 이메일 확인이 켜져 있으면 가입 직후 토큰이 안 나온다
+      show('authOut', {
+        message: '회원가입은 됐지만 토큰이 발급되지 않았습니다. 이메일 인증이 필요한 설정일 수 있습니다.',
+        hint: 'Supabase 대시보드 > Authentication > Providers > Email 에서 "Confirm email"을 끄면 바로 로그인됩니다.',
+        response: body,
+      });
+    }
+  } catch (e) {
+    show('authOut', '실패: ' + e.message);
+  }
+}
+
+function doLogout() {
+  setToken(null);
+  show('authOut', '로그아웃했습니다.');
+  show('profileOut', '');
+}
+
+async function loadProfile() {
+  if (!getToken()) return show('profileOut', '먼저 로그인하세요.');
+  try {
+    const data = await call('/api/users/me', { headers: authHeaders() });
+    show('profileOut', data);
+    document.getElementById('pStoreName').value = data.user.store_name ?? '';
+    document.getElementById('pRegionSi').value = data.user.region_si ?? '';
+    document.getElementById('pRegionGu').value = data.user.region_gu ?? '';
+  } catch (e) { show('profileOut', '실패: ' + e.message); }
+}
+
+async function saveProfile() {
+  if (!getToken()) return show('profileOut', '먼저 로그인하세요.');
+  try {
+    show('profileOut', await call('/api/users/me', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify({
+        storeName: document.getElementById('pStoreName').value.trim() || undefined,
+        regionSi: document.getElementById('pRegionSi').value.trim() || undefined,
+        regionGu: document.getElementById('pRegionGu').value.trim() || undefined,
+      }),
+    }));
+  } catch (e) { show('profileOut', '실패: ' + e.message); }
 }
 
 function show(elId, data) {
@@ -322,9 +468,15 @@ document.querySelectorAll('.tabs button').forEach((btn) => {
 
 // ---- 헬스체크 + 카테고리 초기 로딩 ----
 async function init() {
-  document.getElementById('userId').value = getUserId();
   document.getElementById('collectSecret').value =
     localStorage.getItem('trendpick_collect_secret') || '';
+  renderAuthStatus();
+
+  try {
+    supabaseConfig = await call('/api/config');
+  } catch {
+    // 설정을 못 가져와도 공개 API는 동작하므로 계속 진행
+  }
 
   try {
     const h = await call('/health');
@@ -419,10 +571,9 @@ async function loadDetail() {
 }
 
 async function bookmark(method) {
-  const uid = document.getElementById('userId').value.trim();
   const tid = document.getElementById('bmTrendId').value;
-  if (!uid) return show('bmOut', 'x-user-id를 입력하세요.');
-  const headers = { 'x-user-id': uid };
+  if (!getToken()) return show('bmOut', '먼저 로그인하세요.');
+  const headers = authHeaders();
   try {
     if (method === 'GET') {
       return show('bmOut', await call('/api/users/me/bookmarks', { headers }));
@@ -434,12 +585,12 @@ async function bookmark(method) {
 }
 
 async function saveInterests() {
-  const uid = document.getElementById('userId').value.trim();
+  if (!getToken()) return show('interestOut', '먼저 로그인하세요.');
   const ids = [...document.querySelectorAll('.interest:checked')].map((el) => Number(el.value));
   try {
     show('interestOut', await call('/api/users/me/category-interests', {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json', 'x-user-id': uid },
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
       body: JSON.stringify({ categoryIds: ids }),
     }));
   } catch (e) { show('interestOut', '실패: ' + e.message); }
@@ -459,7 +610,7 @@ async function createTrend() {
   try {
     const r = await call('/api/admin/trends', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
       body: JSON.stringify(body),
     });
     show('createOut', r);
@@ -473,7 +624,7 @@ async function publishTrend() {
   const id = document.getElementById('pubId').value;
   if (!id) return show('pubOut', '트렌드 ID를 입력하세요.');
   try {
-    show('pubOut', await call(`/api/admin/trends/${id}/publish`, { method: 'PATCH' }));
+    show('pubOut', await call(`/api/admin/trends/${id}/publish`, { method: 'PATCH', headers: authHeaders() }));
     loadTrends(); // 발행됐으니 공개 피드 갱신
   } catch (e) { show('pubOut', '실패: ' + e.message); }
 }
@@ -485,14 +636,14 @@ async function createKeyword() {
   try {
     show('kwOut', await call('/api/admin/keywords', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
       body: JSON.stringify({ keyword, trendId: trendId ? Number(trendId) : undefined }),
     }));
   } catch (e) { show('kwOut', '실패: ' + e.message); }
 }
 
 async function listKeywords() {
-  try { show('kwOut', await call('/api/admin/keywords')); }
+  try { show('kwOut', await call('/api/admin/keywords', { headers: authHeaders() })); }
   catch (e) { show('kwOut', '실패: ' + e.message); }
 }
 
@@ -501,7 +652,7 @@ async function discoverKeywords(youtube, naver) {
   try {
     show('discoverOut', await call('/api/admin/keywords/discover', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
       body: JSON.stringify({ youtube, naver }),
     }));
   } catch (e) { show('discoverOut', '실패: ' + e.message); }
@@ -518,7 +669,7 @@ async function loadRising() {
   list.innerHTML = '';
   show('risingOut', '');
   try {
-    const { keywords, note } = await call('/api/admin/keywords/rising?' + params);
+    const { keywords, note } = await call('/api/admin/keywords/rising?' + params, { headers: authHeaders() });
     if (!keywords.length) {
       show('risingOut', '아직 수집된 후보가 없습니다. 발굴 → 수집 배치를 먼저 실행하세요.');
       return;
