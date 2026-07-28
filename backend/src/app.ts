@@ -1,3 +1,5 @@
+import path from 'path';
+
 import cors from 'cors';
 import dotenv from 'dotenv';
 import express from 'express';
@@ -12,8 +14,20 @@ dotenv.config();
 
 const app = express();
 
-app.use(cors());
+// CORS_ORIGIN이 있으면 그 도메인만 허용(쉼표로 여러 개), 없으면 전체 허용.
+// 로컬 개발은 설정 안 해도 되고, 배포 시 프론트 도메인을 넣어 좁힌다.
+const corsOrigin = process.env.CORS_ORIGIN?.trim();
+app.use(
+  cors(
+    corsOrigin ? { origin: corsOrigin.split(',').map((o) => o.trim()) } : undefined
+  )
+);
 app.use(express.json());
+
+// 백엔드 단독 시연용 데모 페이지 (public/demo.html -> http://localhost:4000/demo.html)
+// 같은 오리진에서 서빙되므로 데모 페이지는 CORS 없이 상대 경로로 API를 호출한다.
+// __dirname은 dev(src/)와 build(dist/) 둘 다 backend/ 한 단계 아래라 '..'로 통일.
+app.use(express.static(path.join(__dirname, '..', 'public')));
 
 // 헬스체크: DB 연결 없이도 항상 응답 (배포 환경 liveness probe용)
 app.get('/health', (_req, res) => {

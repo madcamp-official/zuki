@@ -5,6 +5,9 @@
 
 응답은 전부 JSON. 에러는 `{ "error": "메시지" }` 형태로 옵니다.
 
+> **데모 페이지**: 서버 실행 후 `http://localhost:4000/demo.html` 에 접속하면 아래 API를 전부 브라우저에서 직접 호출해볼 수 있습니다.
+> (`backend/public/demo.html` — 백엔드 단독 시연·수동 테스트용. curl/Postman 대신 사용하면 편합니다.)
+
 ---
 
 ## 공통

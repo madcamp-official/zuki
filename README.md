@@ -81,7 +81,7 @@
 | 트렌드 예측 | 상승 조짐 있는 트렌드 사전 안내 | 선택 |
 | 지역별 트렌드 확산 정보 | 트렌드별 주요 확산 지역 태깅 | 선택 |
 | 사용자 제보/투표 | "우리 동네에도 뜨나요?" 피드백 수집 | 선택 |
-| 관리자 전용 화면(UI) | 지금은 API 직접 호출로 대체, 별도 화면 개발 여부 미정 | 선택 |
+| 관리자 전용 화면(UI) | 백엔드 데모 페이지(`/demo.html`)에서 트렌드·키워드 등록, 발행, 수집 실행 가능 | 선택 |
 | Supabase Auth 로그인 | 지금은 `x-user-id` 헤더로 임시 인증 중 | 선택 |
 | 프리미엄 구독/제휴 발주 | 3단계 이후 비즈니스 모델 | 선택 |
 
@@ -244,7 +244,7 @@ erDiagram
 
 - **산출물 설명:** 카페·베이커리 사장님을 위한 트렌드 큐레이션 웹앱. Next.js 프론트엔드 + Express 백엔드 + Supabase(PostgreSQL) 구성.
 - **실행 환경:** 웹 브라우저 (반응형, 모바일/PC 대응). 백엔드는 Node.js 서버.
-- **배포:** (예정 — Render/Railway 백엔드, Vercel 프론트엔드)
+- **배포:** Render(백엔드, 무료 플랜) + Supabase(DB) / Vercel(프론트엔드, 예정)
 
 ### 실행 방법
 
@@ -269,6 +269,47 @@ npm run dev                # http://localhost:3000
 > `.env`는 `backend/.env`에 실제 값을 넣어야 한다 — `.env.example`은 git에 커밋되는 템플릿이라 실제 키/비밀번호를 넣으면 안 됨.
 > Supabase 무료 티어는 direct connection이 IPv6 전용이라, `DATABASE_URL`은 대시보드 Connect → **Session pooler** 연결 문자열을 사용해야 함.
 
+### 백엔드 배포 (Render)
+
+레포 루트의 [`render.yaml`](./render.yaml)에 설정이 들어있다. Render 대시보드에서 **New → Blueprint**로 이 레포를 연결하면 그대로 서비스가 만들어진다.
+
+| 항목 | 값 |
+|---|---|
+| Root Directory | `backend` |
+| Build Command | `npm ci && npm run build` |
+| Start Command | `npm start` |
+| Health Check Path | `/health` |
+| Plan | Free |
+
+**대시보드에서 직접 입력해야 하는 환경변수** (시크릿이라 `render.yaml`엔 값이 없음):
+
+| 변수 | 설명 |
+|---|---|
+| `DATABASE_URL` | Supabase **Session pooler** 연결 문자열. 비밀번호의 특수문자는 URL 인코딩 필요 |
+| `NAVER_CLIENT_ID` / `NAVER_CLIENT_SECRET` | 네이버 데이터랩 API |
+| `YOUTUBE_API_KEY` | 유튜브 데이터 API v3 |
+| `CORS_ORIGIN` | 프론트 배포 도메인 (예: `https://trendpick.vercel.app`). 미설정 시 전체 허용 |
+
+배포 후 `https://<서비스명>.onrender.com/health`로 확인하고, 프론트의 API base URL을 이 주소로 바꾸면 된다.
+
+> **무료 플랜 슬립 주의**
+> 15분간 요청이 없으면 인스턴스가 잠들고, 다음 요청이 깨우는 데 약 1분 걸린다. 두 가지 영향이 있다:
+> 1. **시연 중 첫 요청이 1분 대기** → 발표 직전에 미리 한 번 열어두면 된다.
+> 2. **새벽 3시 자동 수집(node-cron)이 안 돌 수 있음** → 프로세스가 죽어 있으면 스케줄도 안 뜬다. 외부 핑 서비스(cron-job.org 등)로 주기적으로 `/health`를 호출해 깨우거나, 시연 때는 데모 페이지의 수동 수집 버튼을 쓴다.
+
+### 백엔드 데모 페이지
+
+프론트엔드 없이 백엔드만으로 시연·테스트할 수 있는 페이지가 포함되어 있다.
+백엔드 실행 후 **http://localhost:4000/demo.html** 접속:
+
+- **공개 API 탭** — 트렌드 피드 조회(카테고리/확산단계/개수 필터), 트렌드 상세 + 스코어 추이, 즐겨찾기 추가·해제·목록, 관심 카테고리 설정
+- **관리자 API 탭** — 트렌드 카드 등록 → 발행, 수집 대상 키워드 등록·조회, 네이버·유튜브 수집 배치 즉시 실행
+
+Express가 같은 오리진(`backend/public/`)에서 서빙하므로 별도 설정 없이 바로 열린다.
+`x-user-id`(임시 인증 헤더)는 페이지가 UUID를 자동 생성해 `localStorage`에 보관한다.
+
+> 수집 배치 실행은 키워드마다 네이버·유튜브 API를 실제로 호출한다 — 수십 초 걸릴 수 있고 유튜브 할당량(키워드당 101 unit / 하루 10,000)을 소모하니 시연 직전에 남발하지 말 것.
+
 ### 기술 구성
 
 | 분류 | 사용 기술 |
@@ -278,7 +319,7 @@ npm run dev                # http://localhost:3000
 | 데이터베이스 | PostgreSQL (Supabase) |
 | 배치/스케줄링 | node-cron |
 | 외부 API | 네이버 데이터랩 검색어트렌드 API, 유튜브 데이터 API v3 |
-| 배포(예정) | Vercel(프론트), Render/Railway(백엔드), Supabase(DB) |
+| 배포 | Render(백엔드), Supabase(DB), Vercel(프론트, 예정) |
 
 ---
 
