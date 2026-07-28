@@ -247,23 +247,39 @@
 
 ### POST /api/admin/keywords/discover
 
-후보 키워드를 발굴해 등록합니다.
+후보 키워드를 발굴해 등록합니다. 두 소스 모두 **지금 실제로 올라오고 있는 콘텐츠**에서 가져옵니다.
 
 ```json
-{ "youtube": true, "seed": true, "seedLimit": 300 }
+{ "youtube": true, "naver": true }
 ```
 
-- `youtube` — 유튜브 인기 급상승 영상 제목에서 디저트/음료 단어 추출 (3 unit 소모)
-- `seed` — 재료 × 형태 조합 생성 (외부 호출 없음)
-- 셋 다 선택이며 기본값은 위와 같습니다.
+| 소스 | 내용 | 비용 |
+|---|---|---|
+| `youtube` | 인기 급상승 영상 제목 (`chart=mostPopular`) | 4 unit |
+| `naver` | 블로그·카페글 최신 포스트 제목 (`카페 신메뉴` 등 5개 쿼리 × 2개 코퍼스) | 검색 API 10회 (하루 25,000회 한도) |
 
 응답:
 ```json
-{ "discovered": 312, "inserted": 289, "skipped": 23, "errors": [] }
+{
+  "discovered": 87, "inserted": 74, "skipped": 13,
+  "errors": [],
+  "sources": {
+    "youtube": { "titlesScanned": 150, "extracted": 12,
+                 "attempts": [{ "target": "youtube:all", "ok": true, "count": 50 }] },
+    "naver":   { "titlesScanned": 1000, "extracted": 75, "attempts": [...] }
+  }
+}
 ```
+
+`sources.*.attempts`에 소스별 성공/실패가 전부 담깁니다. 실패해도 다른 소스는 계속 진행하되, 실패 사유는 `errors`에 남으니 확인하세요.
 
 이미 등록된 키워드는 건드리지 않습니다(에디터가 카드에 연결해둔 키워드를 덮어쓰지 않기 위해).
 여기서는 후보를 쌓기만 하고, 검색량은 다음 수집 배치가 채웁니다.
+
+> **왜 키워드를 직접 생성하지 않나**
+> 초기엔 `재료 × 형태`(흑임자 + 라떼) 조합을 자동 생성했지만 폐기했습니다. 우리가 만들어낸 말은 대부분 아무도 검색하지 않고, 진짜 유행어(두바이초콜릿 같은)는 조합으로 예측할 수 없기 때문입니다.
+>
+> 네이버가 급상승 키워드 목록 API를 제공하면 좋겠지만, 실시간 검색어는 2021년 폐지됐고 데이터랩 API는 "내가 준 키워드가 얼마나 뜨나"만 답합니다. 그래서 실제 콘텐츠를 읽는 방식을 택했습니다.
 
 ### GET /api/admin/keywords/rising
 

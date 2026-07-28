@@ -4,8 +4,9 @@ import { ApiError } from '../middlewares/errorHandler';
 import { runDailyCollect } from '../jobs/dailyCollect';
 import {
   DiscoveredKeyword,
+  DiscoveryResult,
+  discoverFromNaver,
   discoverFromYoutube,
-  generateSeedKeywords,
 } from '../services/keywordDiscovery';
 
 /**
@@ -95,33 +96,47 @@ export async function listKeywords(req: Request, res: Response) {
  * POST /api/admin/keywords/discover
  * 후보 키워드를 발굴해 DB에 적재한다 (기획서 "트렌드 예측"의 재료 수집 단계).
  *
- * body: { youtube?: boolean, seed?: boolean, seedLimit?: number }
- *   youtube — 유튜브 인기 급상승 영상 제목에서 추출 (기본 true, 3 unit 소모)
- *   seed    — 재료 x 형태 조합 생성 (기본 true, 외부 호출 없음)
+ * body: { youtube?: boolean, naver?: boolean }
+ *   youtube — 유튜브 인기 급상승 영상 제목에서 추출 (기본 true, 4 unit 소모)
+ *   naver   — 네이버 블로그·카페글 최신 포스트 제목에서 추출 (기본 true, 10회 호출)
  *
+ * 둘 다 "지금 실제로 올라오고 있는 콘텐츠"에서 가져온다.
  * 여기서는 "후보를 쌓기만" 한다. 실제 검색량은 다음 수집 배치가 채우고,
  * 그 결과는 GET /api/admin/keywords/rising 으로 확인한다.
  */
 export async function discoverKeywords(req: Request, res: Response) {
   const useYoutube = req.body?.youtube !== false;
-  const useSeed = req.body?.seed !== false;
-  const seedLimit = Number(req.body?.seedLimit ?? 300);
+  const useNaver = req.body?.naver !== false;
 
   const discovered: DiscoveredKeyword[] = [];
   const errors: string[] = [];
+  const sources: Record<string, unknown> = {};
 
-  if (useYoutube) {
+  /** 소스 하나를 실행하고 실패를 응답에 담는다 (조용히 넘어가지 않도록) */
+  async function run(name: string, fn: () => Promise<DiscoveryResult>) {
     try {
-      discovered.push(...(await discoverFromYoutube()));
+      const result = await fn();
+      discovered.push(...result.keywords);
+      sources[name] = {
+        titlesScanned: result.titlesScanned,
+        extracted: result.keywords.length,
+        attempts: result.attempts,
+      };
+      for (const a of result.attempts.filter((x) => !x.ok)) {
+        errors.push(`${a.target} 조회 실패: ${a.error}`);
+      }
+      if (result.titlesScanned === 0) {
+        errors.push(`${name}에서 제목을 하나도 가져오지 못했습니다. API 키/할당량을 확인하세요.`);
+      }
     } catch (err) {
-      errors.push(`유튜브 발굴 실패: ${err instanceof Error ? err.message : String(err)}`);
+      errors.push(`${name} 발굴 실패: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
-  if (useSeed) {
-    discovered.push(...generateSeedKeywords(seedLimit));
-  }
 
-  // 중복 제거 (유튜브에서 나온 것을 우선 — 실제 콘텐츠 기반이라 신뢰도가 높음)
+  if (useYoutube) await run('youtube', () => discoverFromYoutube());
+  if (useNaver) await run('naver', () => discoverFromNaver());
+
+  // 중복 제거 (먼저 나온 소스를 우선)
   const unique = new Map<string, DiscoveredKeyword>();
   for (const d of discovered) {
     if (!unique.has(d.keyword)) unique.set(d.keyword, d);
@@ -148,6 +163,7 @@ export async function discoverKeywords(req: Request, res: Response) {
     inserted,
     skipped,
     errors,
+    sources,
     message:
       inserted > 0
         ? `후보 키워드 ${inserted}개를 등록했습니다. 다음 수집 배치가 검색량을 채운 뒤 /api/admin/keywords/rising 에서 확인하세요.`

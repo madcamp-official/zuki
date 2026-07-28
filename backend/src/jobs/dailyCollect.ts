@@ -1,6 +1,10 @@
 import cron from 'node-cron';
 import { query } from '../db/client';
-import { fetchNaverTrendsBatched, NaverTrendPoint } from '../services/naverDataLab';
+import {
+  NAVER_MAX_KEYWORDS_PER_CALL,
+  NaverTrendPoint,
+  fetchNaverTrends,
+} from '../services/naverDataLab';
 import { fetchYoutubeStats } from '../services/youtubeApi';
 import { calculateScore, classifyStatus } from '../services/scoring';
 
@@ -17,6 +21,11 @@ const YOUTUBE_KEYWORD_LIMIT = Number(process.env.YOUTUBE_KEYWORD_LIMIT ?? 80);
  * 실행 시간이 길어지므로 기본 상한을 둔다.
  */
 const NAVER_KEYWORD_LIMIT = Number(process.env.NAVER_KEYWORD_LIMIT ?? 500);
+
+/** 네이버 호출 사이 대기(ms). 연속 호출로 속도 제한에 걸리는 것을 방지 */
+const NAVER_CALL_DELAY_MS = Number(process.env.NAVER_CALL_DELAY_MS ?? 200);
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
  * 네이버 검색지수 시계열에서 수준(level)과 증감률(momentum)을 뽑는다.
@@ -165,36 +174,49 @@ export async function runDailyCollect(): Promise<DailyCollectSummary> {
   /** keyword 문자열 -> 네이버 수준/증감률. 2단계 점수 계산에서 재사용한다. */
   const naverByKeyword = new Map<string, { level: number | null; changeRate: number | null }>();
 
-  if (allKeywords.length > 0) {
-    const { results, failed } = await fetchNaverTrendsBatched(
-      allKeywords.map((k) => k.keyword),
-      3
-    );
-    apiCallsUsed += Math.ceil(allKeywords.length / 5);
+  const byKeyword = new Map(allKeywords.map((k) => [k.keyword, k]));
 
-    for (const f of failed) {
-      summary.failed += f.keywords.length;
-      summary.errors.push({ keyword: f.keywords.join(', '), message: f.message });
-    }
+  // 묶음(5개)마다 호출 -> 즉시 저장. 전부 모아뒀다가 한꺼번에 쓰면
+  // 도중에 요청이 끊길 때 그때까지의 수집분이 통째로 날아가고,
+  // 진행 상황도 밖에서 확인할 수 없다.
+  for (let i = 0; i < allKeywords.length; i += NAVER_MAX_KEYWORDS_PER_CALL) {
+    const chunk = allKeywords.slice(i, i + NAVER_MAX_KEYWORDS_PER_CALL);
 
-    const byKeyword = new Map(allKeywords.map((k) => [k.keyword, k]));
+    try {
+      const results = await fetchNaverTrends(
+        chunk.map((k) => k.keyword),
+        3
+      );
+      apiCallsUsed += 1;
 
-    for (const r of results) {
-      const kw = byKeyword.get(r.keyword);
-      if (!kw) continue;
-      try {
+      for (const r of results) {
+        const kw = byKeyword.get(r.keyword);
+        if (!kw) continue;
         const calc = calcNaverSignals(r.points);
         naverByKeyword.set(r.keyword, calc);
         await upsertMetric(kw.id, 'naver', 'search_index', calc.level ?? 0);
         await query(`UPDATE keywords SET last_collected_at = now() WHERE id = $1`, [kw.id]);
         summary.naverProcessed += 1;
-      } catch (err) {
-        summary.failed += 1;
-        summary.errors.push({
-          keyword: r.keyword,
-          message: err instanceof Error ? err.message : String(err),
-        });
       }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(`[dailyCollect] 네이버 묶음 실패 (${chunk.map((k) => k.keyword).join(', ')}):`, message);
+      summary.failed += chunk.length;
+      summary.errors.push({ keyword: chunk.map((k) => k.keyword).join(', '), message });
+    }
+
+    // 진행 상황을 밖에서 확인할 수 있도록 배치 레코드를 갱신
+    // (HTTP 요청이 타임아웃돼도 작업은 계속되므로, 상태 조회용 흔적을 남긴다)
+    if (batchId) {
+      await query(`UPDATE collection_batches SET api_calls_used = $1 WHERE id = $2`, [
+        apiCallsUsed,
+        batchId,
+      ]);
+    }
+
+    // 연속 호출로 속도 제한에 걸리지 않도록 짧게 쉬어간다
+    if (i + NAVER_MAX_KEYWORDS_PER_CALL < allKeywords.length) {
+      await sleep(NAVER_CALL_DELAY_MS);
     }
   }
 
