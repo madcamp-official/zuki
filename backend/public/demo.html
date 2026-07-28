@@ -256,6 +256,13 @@
         평소엔 매일 새벽 3시에 node-cron이 자동 실행합니다. 여기서 누르면 기다리지 않고 바로 돌립니다.<br />
         네이버·유튜브 API를 키워드마다 실제로 호출하기 때문에 <strong>키워드 수에 따라 수십 초 걸릴 수 있고, 유튜브 할당량(키워드당 101 unit / 하루 10,000)을 소모합니다.</strong>
       </p>
+      <div class="row">
+        <div>
+          <label>COLLECT_SECRET (배포 환경에서만 필요)</label>
+          <input id="collectSecret" type="password" placeholder="Render Environment에 설정한 값" />
+        </div>
+      </div>
+      <p class="hint">입력값은 이 브라우저에만 저장되며(localStorage) 서버로는 요청 헤더로만 전송됩니다. 로컬 개발 환경에서는 비워둬도 됩니다.</p>
       <button class="go" id="collectBtn" onclick="runCollect()">수집 실행</button>
       <pre class="out" id="collectOut"></pre>
     </div>
@@ -307,6 +314,8 @@ document.querySelectorAll('.tabs button').forEach((btn) => {
 // ---- 헬스체크 + 카테고리 초기 로딩 ----
 async function init() {
   document.getElementById('userId').value = getUserId();
+  document.getElementById('collectSecret').value =
+    localStorage.getItem('trendpick_collect_secret') || '';
 
   try {
     const h = await call('/health');
@@ -531,14 +540,24 @@ async function loadRising() {
 
 async function runCollect() {
   const btn = document.getElementById('collectBtn');
+  const secret = document.getElementById('collectSecret').value.trim();
+  // 매번 다시 입력하지 않도록 브라우저에만 보관 (서버로는 헤더로만 전송)
+  if (secret) localStorage.setItem('trendpick_collect_secret', secret);
+
   btn.disabled = true;
   btn.textContent = '수집 중… (수십 초 걸릴 수 있음)';
   show('collectOut', '네이버·유튜브 API 호출 중…');
   try {
-    show('collectOut', await call('/api/admin/collect', { method: 'POST' }));
+    show('collectOut', await call('/api/admin/collect', {
+      method: 'POST',
+      headers: secret ? { 'x-collect-secret': secret } : {},
+    }));
     loadTrends(); // 점수/단계가 갱신됐을 수 있으니 피드 갱신
   } catch (e) {
-    show('collectOut', '실패: ' + e.message);
+    show('collectOut',
+      e.message.startsWith('401')
+        ? '실패: ' + e.message + '\n\n배포 환경에는 COLLECT_SECRET이 설정돼 있습니다. Render 대시보드 → Environment에서 값을 복사해 위 칸에 넣어주세요.'
+        : '실패: ' + e.message);
   } finally {
     btn.disabled = false;
     btn.textContent = '수집 실행';
