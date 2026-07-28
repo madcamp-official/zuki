@@ -391,6 +391,18 @@ O "최근 7일 블로그 게시량이 2배 늘었습니다" <- 우리가 측정�
 
 > OpenAI 키(`OPENAI_API_KEY`)가 없으면 LLM 대신 규칙 기반 문구로 폴백합니다(`generated: false`). 근거 링크는 그래도 저장됩니다.
 
+**이미지는 Supabase Storage에 올라갑니다.**
+
+`gpt-image-1`로 생성한 뒤 `trend-images` 공개 버킷에 업로드하고, `image_url`에 공개 URL을 넣습니다.
+
+```
+https://bnghhjikybnoztaxjuey.supabase.co/storage/v1/object/public/trend-images/trend-42.png
+```
+
+업로드에는 `SUPABASE_SERVICE_ROLE_KEY`가 필요합니다(버킷 쓰기 정책이 service_role 전용). **이 키는 RLS를 우회하는 최고 권한이라 절대 브라우저에 노출하면 안 됩니다** — 백엔드 환경변수로만 쓰세요.
+
+키가 없으면 로컬 파일(`frontend/public/generated/trends/`)로 폴백합니다. 다만 배포 환경에서는 그 경로가 서빙되지 않습니다 — Render는 `backend/`만 배포하고 프론트는 별도 서버라, 예전 방식은 배포 환경에서 이미지가 보이지 않았습니다.
+
 ### PATCH /api/admin/trends/:id/publish
 
 초안 → 발행 전환. 이거 해야 `GET /api/trends`에 나타남.
