@@ -1,23 +1,36 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import TrendCard from "@/components/TrendCard";
 import { CATEGORIES } from "@/components/CategoryNav";
-import { TRENDS, type CategorySlug } from "@/lib/trends";
+import type { CategorySlug, TrendItem } from "@/lib/trends";
 import { REGIONS, REGION_SI_LIST } from "@/lib/regions";
+import { fetchTrends } from "@/lib/api";
 
-const BOOKMARKED_IDS = [
-  "strawberry-cream-brioche",
-  "matcha-cream-roll",
-  "vanilla-cream-latte",
-];
+// 즐겨찾기 API는 로그인 인증이 붙기 전까지, 실제 DB 트렌드 중 상위 3개를
+// "즐겨찾기한 것처럼" 보여준다 (더 이상 lib/trends.ts의 옛 목업 이미지를 쓰지 않음)
+const BOOKMARK_PREVIEW_COUNT = 3;
 
 export default function MyPage() {
   const [interests, setInterests] = useState<CategorySlug[]>(["dessert"]);
   const [regionSi, setRegionSi] = useState<string | null>("대전");
   const [regionGu, setRegionGu] = useState<string | null>(null);
+  const [bookmarked, setBookmarked] = useState<TrendItem[]>([]);
+  const [loadingBookmarks, setLoadingBookmarks] = useState(true);
 
-  const bookmarked = TRENDS.filter((trend) => BOOKMARKED_IDS.includes(trend.id));
+  useEffect(() => {
+    let cancelled = false;
+    fetchTrends({ limit: BOOKMARK_PREVIEW_COUNT })
+      .then((data) => {
+        if (!cancelled) setBookmarked(data);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingBookmarks(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const toggleInterest = (slug: CategorySlug) => {
     setInterests((prev) =>
@@ -29,15 +42,17 @@ export default function MyPage() {
     <div className="mx-auto flex max-w-3xl flex-col gap-8 px-6 py-8">
       <div>
         <h1 className="font-heading text-3xl text-dark">마이페이지</h1>
-        <p className="mt-2 text-sm text-gray-500">
+        <p className="mt-2 text-base text-gray-500">
           즐겨찾기와 관심 카테고리·지역을 관리하세요
         </p>
       </div>
 
       <section className="rounded-2xl bg-white p-6 shadow-sm">
-        <h2 className="font-heading text-xl text-dark">즐겨찾기</h2>
-        {bookmarked.length === 0 ? (
-          <p className="mt-4 text-sm text-gray-400">
+        <h2 className="font-heading text-2xl text-dark">즐겨찾기</h2>
+        {loadingBookmarks ? (
+          <p className="mt-4 text-base text-gray-400">불러오는 중이에요...</p>
+        ) : bookmarked.length === 0 ? (
+          <p className="mt-4 text-base text-gray-400">
             아직 즐겨찾기한 트렌드가 없어요
           </p>
         ) : (
@@ -50,8 +65,8 @@ export default function MyPage() {
       </section>
 
       <section className="flex flex-col gap-3 rounded-2xl bg-white p-6 shadow-sm">
-        <h2 className="font-heading text-xl text-dark">관심 카테고리</h2>
-        <p className="-mt-1 text-xs text-gray-400">
+        <h2 className="font-heading text-2xl text-dark">관심 카테고리</h2>
+        <p className="-mt-1 text-sm text-gray-400">
           관심 카테고리를 등록하면 홈 브리핑에 우선 반영돼요
         </p>
         <div className="flex flex-wrap gap-2 pt-1">
@@ -62,7 +77,7 @@ export default function MyPage() {
                 key={category.slug}
                 type="button"
                 onClick={() => toggleInterest(category.slug as CategorySlug)}
-                className={`rounded-full px-5 py-2.5 text-sm font-semibold transition-colors ${
+                className={`rounded-full px-5 py-2.5 text-base font-semibold transition-colors ${
                   active
                     ? "bg-strawberry text-white"
                     : "bg-cream text-gray-500 hover:bg-rose-50"
@@ -76,13 +91,13 @@ export default function MyPage() {
       </section>
 
       <section className="flex flex-col gap-3 rounded-2xl bg-white p-6 shadow-sm">
-        <h2 className="font-heading text-xl text-dark">지역 설정</h2>
-        <p className="-mt-1 text-xs text-gray-400">
+        <h2 className="font-heading text-2xl text-dark">지역 설정</h2>
+        <p className="-mt-1 text-sm text-gray-400">
           지역별로 트렌드 확산 속도가 달라 참고 정보로 활용돼요
         </p>
 
         <div className="flex flex-col gap-2 pt-1">
-          <p className="text-xs font-semibold text-gray-400">시/도</p>
+          <p className="text-sm font-semibold text-gray-400">시/도</p>
           <div className="flex flex-wrap gap-2">
             {REGION_SI_LIST.map((si) => (
               <button
@@ -92,7 +107,7 @@ export default function MyPage() {
                   setRegionSi(si);
                   setRegionGu(null);
                 }}
-                className={`rounded-full px-4 py-2 text-sm font-medium transition-colors ${
+                className={`rounded-full px-4 py-2 text-base font-medium transition-colors ${
                   regionSi === si
                     ? "bg-strawberry text-white"
                     : "bg-cream text-gray-500 hover:bg-rose-50"
@@ -106,14 +121,14 @@ export default function MyPage() {
 
         {regionSi && (
           <div className="flex flex-col gap-2 pt-2">
-            <p className="text-xs font-semibold text-gray-400">구/군</p>
+            <p className="text-sm font-semibold text-gray-400">구/군</p>
             <div className="flex flex-wrap gap-2">
               {REGIONS[regionSi].map((gu) => (
                 <button
                   key={gu}
                   type="button"
                   onClick={() => setRegionGu(gu)}
-                  className={`rounded-full px-4 py-2 text-sm font-medium transition-colors ${
+                  className={`rounded-full px-4 py-2 text-base font-medium transition-colors ${
                     regionGu === gu
                       ? "bg-strawberry text-white"
                       : "bg-cream text-gray-500 hover:bg-rose-50"
@@ -127,7 +142,7 @@ export default function MyPage() {
         )}
       </section>
 
-      <button className="w-full rounded-full bg-strawberry py-3.5 font-button text-sm font-bold text-white transition-colors hover:bg-rose-500">
+      <button className="w-full rounded-full bg-strawberry py-3.5 font-button text-base font-bold text-white transition-colors hover:bg-rose-500">
         저장하기
       </button>
     </div>

@@ -229,7 +229,8 @@ export default function AdminPage() {
                       <StatusBadge status={trend.status} />
                     </td>
                     <td className="py-3 pr-4 font-number text-strawberry">
-                      +{trend.searchGrowth}%
+                      {trend.searchGrowth >= 0 ? "+" : ""}
+                      {trend.searchGrowth}%
                     </td>
                   </tr>
                 ))}
