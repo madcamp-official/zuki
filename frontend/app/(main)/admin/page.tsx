@@ -90,7 +90,8 @@ export default function AdminPage() {
           <code className="rounded bg-gray-100 px-1 py-0.5 text-xs">
             source: &apos;editor&apos;
           </code>
-          로 저장되어 스코어링에 반영돼요
+          로 저장되어 스코어링에 반영돼요. 이미지를 직접 넣지 않으면 AI가 자동으로
+          생성해요 (10~20초 정도 걸려요).
         </p>
       </div>
 
@@ -183,7 +184,7 @@ export default function AdminPage() {
             disabled={!canSubmit}
             className="w-full rounded-full bg-strawberry py-3 font-button text-sm font-bold text-white transition-colors hover:bg-rose-500 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400 sm:col-span-2"
           >
-            {submitting ? "등록 중..." : "트렌드 등록하고 발행하기"}
+            {submitting ? "AI 이미지 생성 중... (최대 20초)" : "트렌드 등록하고 발행하기"}
           </button>
 
           {message && (

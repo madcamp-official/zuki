@@ -74,11 +74,11 @@ export default async function TrendDetailPage({
           </p>
           <button className="flex w-fit items-center gap-2 rounded-full bg-strawberry px-5 py-2.5 font-button text-sm font-semibold text-white">
             <Image
-              src="/images/bookmark.png"
+              src="/generated/icons/bookmark-icon.png"
               alt=""
               width={16}
               height={16}
-              className="object-contain"
+              className="object-contain brightness-0 invert"
             />
             즐겨찾기에 담기
           </button>
