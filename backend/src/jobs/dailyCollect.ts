@@ -333,6 +333,11 @@ export async function runDailyCollect(): Promise<DailyCollectSummary> {
       const youtubeChangeRate = await calcYoutubeChangeRate(kw.id, yt.videoCount);
       await upsertMetric(kw.id, 'youtube', 'video_count', yt.videoCount);
       await upsertMetric(kw.id, 'youtube', 'view_count', yt.totalViewCount);
+      // 조회수 "속도" — 절대 조회수보다 지금 유행을 잘 나타낸다.
+      // 3년 전 100만 조회 영상보다 5일 전 5만 조회 영상이 더 뜨거운 신호다.
+      if (yt.viewVelocity !== null) {
+        await upsertMetric(kw.id, 'youtube', 'view_velocity', yt.viewVelocity);
+      }
       // 네이버와 동일하게 계산된 증감률을 저장해둔다 (조회 시 재계산 불필요)
       if (youtubeChangeRate !== null) {
         await upsertMetric(kw.id, 'youtube', 'mention_growth_rate', youtubeChangeRate);

@@ -261,14 +261,17 @@
       <h2><span class="method">POST</span>/api/admin/keywords/discover — 후보 키워드 발굴</h2>
       <p class="hint">
         네이버 데이터랩은 "이 키워드가 뜨나?"에만 답하고 "뭐가 뜨나?"는 못 알려줍니다(급상승 키워드 API 없음).
-        그래서 지금 실제로 올라오는 콘텐츠에서 후보를 찾아냅니다 —
-        <strong>유튜브 인기 급상승 영상 제목</strong>(4 unit)과
-        <strong>네이버 블로그·카페글 최신 포스트 제목</strong>(10회 호출)에서 추출합니다.
-        여기서는 후보를 쌓기만 하고, 검색량은 다음 수집 배치가 채웁니다.
+        그래서 지금 올라오는 콘텐츠에서 후보를 찾습니다 — <strong>네이버 블로그</strong>, <strong>네이버 카페글</strong>,
+        <strong>유튜브 검색</strong> 세 소스를 각각 훑습니다.<br />
+        세 소스를 따로 부르는 이유는 <strong>교차 검증</strong> 때문입니다. 어떤 소스도 편향이 있어서(블로그는 체험단·협찬이 많고,
+        카페는 연령대가 갈리고, 유튜브는 채널 구독자층이 다름), 한 곳에서만 잡힌 키워드는 그 소스의 편향일 수 있습니다.
+        개인 카페·빵집 이름이 대개 블로그 한 곳에서만 나온다는 점에서 노이즈도 함께 걸러집니다.<br />
+        유튜브는 인기 급상승 차트 대신 <strong>주제 검색 + 조회수 속도</strong>를 씁니다(차트는 음악·예능이 점령해 디저트가 안 나옴).
+        특정 채널을 고정하지 않는 이유는 고르는 사람의 취향이 들어가기 때문입니다.
       </p>
-      <button class="go" onclick="discoverKeywords(true, true)">둘 다 실행</button>
-      <button class="go ghost" onclick="discoverKeywords(true, false)">유튜브만</button>
-      <button class="go ghost" onclick="discoverKeywords(false, true)">네이버만</button>
+      <button class="go" onclick="discoverKeywords({})">전체 실행</button>
+      <button class="go ghost" onclick="discoverKeywords({cafe:false, youtube:false})">블로그만</button>
+      <button class="go ghost" onclick="discoverKeywords({blog:false, cafe:false})">유튜브만</button>
       <pre class="out" id="discoverOut"></pre>
     </div>
 
@@ -283,6 +286,14 @@
           <select id="rExcludeStaples">
             <option value="true">제외 (검색지수 40+ & 증감 5% 미만)</option>
             <option value="false">포함</option>
+          </select>
+        </div>
+        <div>
+          <label>최소 소스 수</label>
+          <select id="rMinSources">
+            <option value="1">1개 이상 (전체)</option>
+            <option value="2">2개 이상 (교차 검증됨)</option>
+            <option value="3">3개 전부</option>
           </select>
         </div>
         <div>
@@ -647,13 +658,13 @@ async function listKeywords() {
   catch (e) { show('kwOut', '실패: ' + e.message); }
 }
 
-async function discoverKeywords(youtube, naver) {
-  show('discoverOut', '발굴 중… (네이버 검색 10회 호출이라 10~20초 걸립니다)');
+async function discoverKeywords(opts) {
+  show('discoverOut', '발굴 중… (네이버 14회 + 유튜브 4회 호출이라 20~40초 걸립니다)');
   try {
     show('discoverOut', await call('/api/admin/keywords/discover', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...authHeaders() },
-      body: JSON.stringify({ youtube, naver }),
+      body: JSON.stringify(opts || {}),
     }));
   } catch (e) { show('discoverOut', '실패: ' + e.message); }
 }
@@ -664,6 +675,7 @@ async function loadRising() {
     limit: document.getElementById('rLimit').value || '30',
     excludeStaples: document.getElementById('rExcludeStaples').value,
     excludeSeasonal: document.getElementById('rExcludeSeasonal').value,
+    minSources: document.getElementById('rMinSources').value,
   });
   const list = document.getElementById('risingList');
   list.innerHTML = '';
@@ -674,6 +686,7 @@ async function loadRising() {
       show('risingOut', '아직 수집된 후보가 없습니다. 발굴 → 수집 배치를 먼저 실행하세요.');
       return;
     }
+    const SRC_LABEL = { blog: '블로그', cafe: '카페', youtube: '유튜브' };
     const rows = keywords.map((k) => `
       <tr>
         <td style="padding:6px 10px;font-weight:600;text-align:right">${k.trend_signal ?? '-'}</td>
@@ -681,9 +694,13 @@ async function loadRising() {
           ${escapeHtml(k.keyword)}
           ${k.is_seasonal ? '<span class="badge gray" style="margin-left:6px">계절</span>' : ''}
         </td>
+        <td style="padding:6px 10px">
+          ${(k.sources || []).map((s) => `<span class="badge gray" style="margin-right:3px">${SRC_LABEL[s] || s}</span>`).join('') || '—'}
+        </td>
         <td style="padding:6px 10px;text-align:right">${k.mention_growth_rate != null ? fmtPct(k.mention_growth_rate) : '—'}</td>
         <td style="padding:6px 10px;text-align:right">${k.growth_rate != null ? fmtPct(k.growth_rate) : '—'}</td>
         <td style="padding:6px 10px;text-align:right">${k.yoy_growth_rate != null ? fmtPct(k.yoy_growth_rate) : '—'}</td>
+        <td style="padding:6px 10px;text-align:right;color:var(--muted)">${k.view_velocity != null ? Number(k.view_velocity).toLocaleString() : '—'}</td>
         <td style="padding:6px 10px;text-align:right;color:var(--muted)">${k.mention_count ?? 0}건</td>
         <td style="padding:6px 10px;text-align:right;color:var(--muted)">${k.search_index ?? '-'}</td>
       </tr>`).join('');
@@ -692,9 +709,11 @@ async function loadRising() {
         <thead><tr style="border-bottom:1px solid var(--border);color:var(--muted);font-size:12px">
           <th style="text-align:right;padding:6px 10px">신호</th>
           <th style="text-align:left;padding:6px 10px">키워드</th>
+          <th style="text-align:left;padding:6px 10px">소스</th>
           <th style="text-align:right;padding:6px 10px">언급 증가</th>
           <th style="text-align:right;padding:6px 10px">검색 증가</th>
           <th style="text-align:right;padding:6px 10px">전년 대비</th>
+          <th style="text-align:right;padding:6px 10px">조회수 속도</th>
           <th style="text-align:right;padding:6px 10px">최근 글</th>
           <th style="text-align:right;padding:6px 10px">검색지수</th>
         </tr></thead>

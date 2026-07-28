@@ -91,8 +91,17 @@ CREATE TABLE keywords (
     id                BIGSERIAL PRIMARY KEY,
     trend_id          BIGINT REFERENCES trends(id) ON DELETE SET NULL,
     keyword           VARCHAR(50) NOT NULL UNIQUE,
-    -- 어디서 발굴됐는지: 'editor'(직접 등록) | 'youtube'(인기영상 제목) | 'naver'(블로그·카페글)
+    -- 어디서 발굴됐는지 (대표 소스 1개). 하위 호환용이며 실제 판단은 sources를 쓴다
     source            VARCHAR(20) NOT NULL DEFAULT 'editor',
+    -- 발굴된 모든 소스: 'blog' | 'cafe' | 'youtube'
+    --
+    -- 교차 검증용. 어떤 소스도 편향이 있어서(블로그는 체험단·협찬이 많고,
+    -- 카페는 연령대가 갈리고, 유튜브는 채널 구독자층이 다름) 한 곳에서만
+    -- 잡힌 키워드는 그 소스의 편향일 수 있다. 개인 카페·빵집 이름이 대개
+    -- 블로그 한 곳에서만 나온다는 점에서 노이즈 필터 역할도 한다.
+    sources           TEXT[] NOT NULL DEFAULT '{}',
+    -- 소스별 언급 횟수 {"blog": 12, "cafe": 3}
+    mention_by_source JSONB NOT NULL DEFAULT '{}'::jsonb,
     -- 발굴 시 최근 글 제목에서 몇 번 언급됐는지.
     -- "최근 글에 자주 나오는데 검색량은 아직 낮다"가 태동기의 신호라서,
     -- 검색지수만으로는 스테디셀러와 신흥 트렌드를 구분할 수 없다.
@@ -111,6 +120,7 @@ CREATE TABLE keywords (
 CREATE INDEX idx_keywords_trend ON keywords(trend_id);
 CREATE INDEX idx_keywords_candidates ON keywords(source) WHERE trend_id IS NULL;
 CREATE INDEX idx_keywords_mention ON keywords(mention_count DESC) WHERE trend_id IS NULL;
+CREATE INDEX idx_keywords_sources ON keywords USING GIN (sources) WHERE trend_id IS NULL;
 
 -- ---------------------------------------------------------------------
 -- 5. keyword_metrics : 네이버/유튜브 API 원시 수집 데이터 (일별)

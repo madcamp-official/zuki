@@ -134,7 +134,7 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
  */
 export async function measureMentionTrend(
   keyword: string,
-  maxPages = 3
+  maxPages = 10 // API 상한(start<=1000)까지. 검색 API는 하루 25,000회라 여유롭다
 ): Promise<MentionTrend> {
   const dates: string[] = [];
   let apiCalls = 0;
@@ -175,14 +175,31 @@ export async function measureMentionTrend(
     ? Math.round((today.getTime() - oldestSeen.getTime()) / MS_PER_DAY)
     : 0;
 
+  /**
+   * 증가율은 아래 두 조건을 모두 만족할 때만 낸다.
+   *
+   *  1) 14일 구간을 실제로 덮었을 것 (windowDays >= 14)
+   *     인기 키워드는 1,000건이 며칠치밖에 안 돼 이전 7일에 도달하지 못한다.
+   *     그 경우 previousCount가 0이 되어 "무한 증가"처럼 보이는데, 사실은
+   *     데이터가 없는 것이다.
+   *
+   *  2) 표본이 최소한은 될 것 (양쪽 합계 >= MIN_SAMPLE)
+   *     글 5건으로 계산한 "+66.7%"는 노이즈다. 값을 만들어내느니 null이 낫다.
+   *
+   * 7일 단위로 비교하는 이유는 요일 효과 때문이다. 블로그 게시량은 주말·평일
+   * 편차가 커서, 창 길이가 7의 배수가 아니면 요일이 상쇄되지 않는다.
+   */
+  const MIN_SAMPLE = 10;
+  const sample = recentCount + previousCount;
+  const reliable = windowDays >= 14 && sample >= MIN_SAMPLE && previousCount > 0;
+
   return {
     keyword,
     recentCount,
     previousCount,
-    growthRate:
-      previousCount > 0
-        ? Math.round(((recentCount - previousCount) / previousCount) * 1000) / 10
-        : null,
+    growthRate: reliable
+      ? Math.round(((recentCount - previousCount) / previousCount) * 1000) / 10
+      : null,
     windowDays,
     postsScanned: dates.length,
     apiCalls,
