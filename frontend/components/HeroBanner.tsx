@@ -47,20 +47,20 @@ export default function HeroBanner() {
               </span>
             </div>
 
-            <h2 className="mt-6 font-heading text-3xl leading-tight md:text-4xl">
+            <h2 className="mt-6 font-heading text-4xl leading-tight md:text-5xl">
               딸기 크림
               <br />
               브리오슈
             </h2>
-            <div className="flex gap-4 text-xs">
+            <div className="flex gap-5 text-base">
               <span>
-                검색량 <b className="font-number text-sm">+78%</b>
+                검색량 <b className="font-number text-lg">+78%</b>
               </span>
               <span>
-                언급량(인스타) <b className="font-number text-sm">+63%</b>
+                언급량(인스타) <b className="font-number text-lg">+63%</b>
               </span>
             </div>
-            <button className="mt-2 w-fit rounded-full bg-white px-4 py-2 font-button text-xs font-semibold text-strawberry">
+            <button className="mt-2 w-fit rounded-full bg-white px-5 py-2.5 font-button text-sm font-semibold text-strawberry">
               자세히 보기 →
             </button>
           </div>
