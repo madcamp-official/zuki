@@ -40,7 +40,7 @@ export default function CategoryExplorer() {
       <div className="flex flex-wrap gap-2">
         <button
           onClick={() => setActive(ALL_TAB)}
-          className={`rounded-full px-5 py-2.5 text-sm font-semibold transition-colors ${
+          className={`rounded-full px-5 py-2.5 text-base font-semibold transition-colors ${
             active === ALL_TAB
               ? "bg-strawberry text-white"
               : "bg-white text-gray-500 hover:bg-rose-50"
@@ -52,7 +52,7 @@ export default function CategoryExplorer() {
           <button
             key={category.slug}
             onClick={() => setActive(category.slug as CategorySlug)}
-            className={`flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-semibold transition-colors ${
+            className={`flex items-center gap-2 rounded-full px-5 py-2.5 text-base font-semibold transition-colors ${
               active === category.slug
                 ? "bg-strawberry text-white"
                 : "bg-white text-gray-500 hover:bg-rose-50"
@@ -64,11 +64,11 @@ export default function CategoryExplorer() {
       </div>
 
       {loading ? (
-        <p className="py-16 text-center text-sm text-gray-400">
+        <p className="py-16 text-center text-base text-gray-400">
           불러오는 중이에요...
         </p>
       ) : trends.length === 0 ? (
-        <p className="py-16 text-center text-sm text-gray-400">
+        <p className="py-16 text-center text-base text-gray-400">
           아직 등록된 트렌드가 없어요
         </p>
       ) : (
