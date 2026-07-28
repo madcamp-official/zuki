@@ -4,7 +4,8 @@ import { notFound } from "next/navigation";
 import StatusBadge from "@/components/StatusBadge";
 import TrendChart from "@/components/TrendChart";
 import TrendCard from "@/components/TrendCard";
-import { CATEGORY_LABELS, getTrendById, getTrendsByCategory } from "@/lib/trends";
+import { CATEGORY_LABELS } from "@/lib/trends";
+import { fetchTrendById, fetchTrends } from "@/lib/api";
 
 export default async function TrendDetailPage({
   params,
@@ -12,15 +13,17 @@ export default async function TrendDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const trend = getTrendById(id);
+  const result = await fetchTrendById(id);
 
-  if (!trend) {
+  if (!result) {
     notFound();
   }
 
-  const related = getTrendsByCategory(trend.category)
-    .filter((item) => item.id !== trend.id)
-    .slice(0, 4);
+  const { trend, scoreHistory } = result;
+
+  const related = (await fetchTrends({ category: trend.category, limit: 5 })).filter(
+    (item) => item.id !== trend.id,
+  );
 
   return (
     <div className="mx-auto flex max-w-4xl flex-col gap-8 px-6 py-8">
@@ -71,11 +74,11 @@ export default async function TrendDetailPage({
           </p>
           <button className="flex w-fit items-center gap-2 rounded-full bg-strawberry px-5 py-2.5 font-button text-sm font-semibold text-white">
             <Image
-              src="/images/bookmark.png"
+              src="/generated/icons/bookmark-icon.png"
               alt=""
               width={16}
               height={16}
-              className="object-contain"
+              className="object-contain brightness-0 invert"
             />
             즐겨찾기에 담기
           </button>
@@ -88,7 +91,7 @@ export default async function TrendDetailPage({
           네이버 데이터랩 기준 상대 검색지수 (0~100)
         </p>
         <div className="mt-4">
-          <TrendChart data={trend.searchTrend} />
+          <TrendChart data={scoreHistory} />
         </div>
       </section>
 
@@ -96,16 +99,22 @@ export default async function TrendDetailPage({
         <h2 className="font-heading text-xl text-dark">
           왜 이 트렌드가 뜨고 있을까요?
         </h2>
-        <ul className="mt-4 flex flex-col gap-2 text-sm text-gray-600">
-          {trend.why.map((reason) => (
-            <li key={reason} className="flex items-start gap-2">
-              <span className="text-strawberry" aria-hidden>
-                ✅
-              </span>
-              {reason}
-            </li>
-          ))}
-        </ul>
+        {trend.why.length === 0 ? (
+          <p className="mt-4 text-sm text-gray-400">
+            아직 등록된 배경 설명이 없어요
+          </p>
+        ) : (
+          <ul className="mt-4 flex flex-col gap-2 text-sm text-gray-600">
+            {trend.why.map((reason) => (
+              <li key={reason} className="flex items-start gap-2">
+                <span className="text-strawberry" aria-hidden>
+                  ✅
+                </span>
+                {reason}
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
 
       {related.length > 0 && (

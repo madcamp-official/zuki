@@ -5,7 +5,6 @@ const NAV_ITEMS = [
   { label: "홈", href: "/" },
   { label: "트렌드 브리핑", href: "/category" },
   { label: "랭킹", href: "/ranking" },
-  { label: "즐겨찾기", href: "/mypage" },
   { label: "마이페이지", href: "/mypage" },
 ];
 

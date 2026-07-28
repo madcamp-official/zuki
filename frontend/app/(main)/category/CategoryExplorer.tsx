@@ -1,10 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import TrendCard from "@/components/TrendCard";
 import { CATEGORIES } from "@/components/CategoryNav";
-import { TRENDS, type CategorySlug } from "@/lib/trends";
+import type { CategorySlug, TrendItem } from "@/lib/trends";
+import { fetchTrends } from "@/lib/api";
 
 const ALL_TAB = "all";
 
@@ -14,14 +15,25 @@ export default function CategoryExplorer() {
   const [active, setActive] = useState<CategorySlug | typeof ALL_TAB>(
     (initialType as CategorySlug) ?? ALL_TAB,
   );
+  const [trends, setTrends] = useState<TrendItem[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const filtered = useMemo(
-    () =>
-      active === ALL_TAB
-        ? TRENDS
-        : TRENDS.filter((trend) => trend.category === active),
-    [active],
-  );
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+
+    fetchTrends(active === ALL_TAB ? { limit: 40 } : { category: active, limit: 40 })
+      .then((data) => {
+        if (!cancelled) setTrends(data);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [active]);
 
   return (
     <>
@@ -51,13 +63,17 @@ export default function CategoryExplorer() {
         ))}
       </div>
 
-      {filtered.length === 0 ? (
+      {loading ? (
+        <p className="py-16 text-center text-sm text-gray-400">
+          불러오는 중이에요...
+        </p>
+      ) : trends.length === 0 ? (
         <p className="py-16 text-center text-sm text-gray-400">
           아직 등록된 트렌드가 없어요
         </p>
       ) : (
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-          {filtered.map((trend) => (
+          {trends.map((trend) => (
             <TrendCard key={trend.id} trend={trend} />
           ))}
         </div>
