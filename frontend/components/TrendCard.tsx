@@ -28,7 +28,7 @@ export default function TrendCard({ trend }: { trend: TrendItem }) {
           className="absolute right-2 top-2 grid h-8 w-8 place-items-center rounded-full bg-white/90"
         >
           <Image
-            src="/images/bookmark.png"
+            src="/generated/icons/bookmark-icon.png"
             alt=""
             width={16}
             height={16}
