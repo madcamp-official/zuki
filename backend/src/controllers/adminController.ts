@@ -185,35 +185,31 @@ export async function listRisingKeywords(req: Request, res: Response) {
   const minIndex = Number(req.query.minIndex ?? 1);
   const includeLinked = req.query.includeLinked === 'true';
 
+  // 증감률은 수집 시점에 네이버 3개월 시계열로 계산해 저장해둔 값을 그대로 읽는다.
+  // (DB에 쌓인 날짜별 값끼리 다시 비교하면 이틀치가 쌓일 때까지 값이 안 나온다)
   const rows = await query(
-    `WITH m AS (
-       SELECT keyword_id, value, collected_date
+    `WITH latest_index AS (
+       SELECT DISTINCT ON (keyword_id) keyword_id, value, collected_date
          FROM keyword_metrics
         WHERE source_type = 'naver' AND metric_type = 'search_index'
+        ORDER BY keyword_id, collected_date DESC
      ),
-     latest AS (
-       SELECT DISTINCT ON (keyword_id) keyword_id, value, collected_date
-         FROM m ORDER BY keyword_id, collected_date DESC
-     ),
-     base AS (
-       SELECT DISTINCT ON (m.keyword_id) m.keyword_id, m.value
-         FROM m JOIN latest l ON l.keyword_id = m.keyword_id
-        WHERE m.collected_date <  l.collected_date
-          AND m.collected_date >= l.collected_date - INTERVAL '7 days'
-        ORDER BY m.keyword_id, m.collected_date ASC
+     latest_growth AS (
+       SELECT DISTINCT ON (keyword_id) keyword_id, value
+         FROM keyword_metrics
+        WHERE source_type = 'naver' AND metric_type = 'search_growth_rate'
+        ORDER BY keyword_id, collected_date DESC
      )
      SELECT k.id, k.keyword, k.source, k.trend_id,
-            l.value AS search_index,
-            l.collected_date,
-            CASE WHEN b.value > 0
-                 THEN ROUND(((l.value - b.value) / b.value) * 100, 1)
-            END AS growth_rate
+            li.value AS search_index,
+            li.collected_date,
+            lg.value AS growth_rate
        FROM keywords k
-       JOIN latest l ON l.keyword_id = k.id
-       LEFT JOIN base b ON b.keyword_id = k.id
-      WHERE l.value >= $1
+       JOIN latest_index li ON li.keyword_id = k.id
+       LEFT JOIN latest_growth lg ON lg.keyword_id = k.id
+      WHERE li.value >= $1
         ${includeLinked ? '' : 'AND k.trend_id IS NULL'}
-      ORDER BY growth_rate DESC NULLS LAST, l.value DESC
+      ORDER BY lg.value DESC NULLS LAST, li.value DESC
       LIMIT $2`,
     [minIndex, limit]
   );
@@ -221,7 +217,7 @@ export async function listRisingKeywords(req: Request, res: Response) {
   res.json({
     keywords: rows,
     note:
-      'growth_rate가 null이면 비교할 과거 데이터가 아직 없다는 뜻입니다(수집 2일차부터 값이 생깁니다). 카드로 만들 키워드를 고른 뒤 POST /api/admin/trends로 카드를 만들고 POST /api/admin/keywords로 연결하세요.',
+      'growth_rate는 네이버 검색지수의 최근 7일 평균 대 그 이전 7일 평균 증감률(%)입니다. null이면 해당 키워드의 시계열이 14일치가 안 된다는 뜻입니다. 카드로 만들 키워드를 고른 뒤 POST /api/admin/trends로 카드를 만들고 POST /api/admin/keywords로 연결하세요.',
   });
 }
 

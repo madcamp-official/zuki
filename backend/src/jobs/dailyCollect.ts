@@ -195,6 +195,15 @@ export async function runDailyCollect(): Promise<DailyCollectSummary> {
         const calc = calcNaverSignals(r.points);
         naverByKeyword.set(r.keyword, calc);
         await upsertMetric(kw.id, 'naver', 'search_index', calc.level ?? 0);
+
+        // 증감률도 함께 저장한다.
+        // 네이버가 3개월 시계열을 통째로 주므로 이 값은 첫 수집에서 이미 계산돼 있다.
+        // 저장하지 않으면 조회 시점에 DB에 쌓인 값끼리 다시 비교해야 하고,
+        // 그러면 이틀치가 쌓일 때까지 증감률을 보여줄 수 없다.
+        if (calc.changeRate !== null) {
+          await upsertMetric(kw.id, 'naver', 'search_growth_rate', calc.changeRate);
+        }
+
         await query(`UPDATE keywords SET last_collected_at = now() WHERE id = $1`, [kw.id]);
         summary.naverProcessed += 1;
       }
@@ -237,6 +246,10 @@ export async function runDailyCollect(): Promise<DailyCollectSummary> {
       const youtubeChangeRate = await calcYoutubeChangeRate(kw.id, yt.videoCount);
       await upsertMetric(kw.id, 'youtube', 'video_count', yt.videoCount);
       await upsertMetric(kw.id, 'youtube', 'view_count', yt.totalViewCount);
+      // 네이버와 동일하게 계산된 증감률을 저장해둔다 (조회 시 재계산 불필요)
+      if (youtubeChangeRate !== null) {
+        await upsertMetric(kw.id, 'youtube', 'mention_growth_rate', youtubeChangeRate);
+      }
       summary.youtubeProcessed += 1;
 
       const naver = naverByKeyword.get(kw.keyword);

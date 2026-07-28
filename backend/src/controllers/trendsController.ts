@@ -3,72 +3,47 @@ import { query } from '../db/client';
 import { ApiError } from '../middlewares/errorHandler';
 
 /**
- * 트렌드별 수집 지표(검색량/언급량) 증감률을 계산하는 공통 CTE.
+ * 트렌드별 수집 지표를 뽑는 공통 CTE.
  *
- * keyword_metrics에는 네이버 검색지수·유튜브 영상수/조회수가 날짜별로 쌓이는데,
- * 프론트는 "얼마나 늘었는지(%)"를 원하기 때문에 여기서 증감률로 가공해 내보낸다.
+ * 증감률은 여기서 계산하지 않고, 수집 배치가 저장해둔 값을 그대로 읽는다.
+ * 네이버가 3개월 시계열을 통째로 주기 때문에 증감률은 첫 수집에서 이미
+ * 계산 가능하다. DB에 쌓인 날짜별 값끼리 다시 비교하는 방식이면 이틀치가
+ * 쌓일 때까지 값을 보여줄 수 없어서, 계산 시점의 값을 저장하는 쪽을 택했다.
  *
- * 기준값은 "최신 수집일로부터 7일 이내에 있는 가장 오래된 값".
- * 매일 수집이 보장되지 않아도(주말 누락 등) 비교 대상이 잡히도록 이렇게 잡았다.
- * 비교할 과거 데이터가 없거나 기준값이 0이면 NULL(= 아직 판단 불가)로 둔다.
+ * metric_type 별 의미:
+ *   naver/search_index         최근 7일 평균 검색지수 (0~100)
+ *   naver/search_growth_rate   최근 7일 평균 대 이전 7일 평균 증감률 (%)
+ *   youtube/video_count        키워드 검색 결과 영상 수
+ *   youtube/view_count         조회수 상위 영상 10개의 조회수 합
+ *   youtube/mention_growth_rate 영상 수 증감률 (%)
  */
 const METRICS_CTE = `
-  WITH m AS (
-    SELECT k.trend_id, km.source_type, km.metric_type, km.value, km.collected_date
+  WITH latest AS (
+    SELECT DISTINCT ON (k.trend_id, km.source_type, km.metric_type)
+           k.trend_id, km.source_type, km.metric_type, km.value
       FROM keywords k
       JOIN keyword_metrics km ON km.keyword_id = k.id
      WHERE k.trend_id IS NOT NULL
-  ),
-  latest AS (
-    SELECT DISTINCT ON (trend_id, source_type, metric_type)
-           trend_id, source_type, metric_type, value, collected_date
-      FROM m
-     ORDER BY trend_id, source_type, metric_type, collected_date DESC
-  ),
-  base AS (
-    SELECT DISTINCT ON (m.trend_id, m.source_type, m.metric_type)
-           m.trend_id, m.source_type, m.metric_type, m.value
-      FROM m
-      JOIN latest l
-        ON l.trend_id = m.trend_id
-       AND l.source_type = m.source_type
-       AND l.metric_type = m.metric_type
-     WHERE m.collected_date <  l.collected_date
-       AND m.collected_date >= l.collected_date - INTERVAL '7 days'
-     ORDER BY m.trend_id, m.source_type, m.metric_type, m.collected_date ASC
-  ),
-  joined AS (
-    SELECT l.trend_id, l.source_type, l.metric_type,
-           l.value AS latest_value, b.value AS base_value
-      FROM latest l
-      LEFT JOIN base b
-        ON b.trend_id = l.trend_id
-       AND b.source_type = l.source_type
-       AND b.metric_type = l.metric_type
+     ORDER BY k.trend_id, km.source_type, km.metric_type, km.collected_date DESC
   ),
   metrics AS (
     SELECT trend_id,
-           MAX(latest_value) FILTER (WHERE source_type = 'naver'   AND metric_type = 'search_index') AS naver_latest,
-           MAX(base_value)   FILTER (WHERE source_type = 'naver'   AND metric_type = 'search_index') AS naver_base,
-           MAX(latest_value) FILTER (WHERE source_type = 'youtube' AND metric_type = 'video_count')  AS yt_latest,
-           MAX(base_value)   FILTER (WHERE source_type = 'youtube' AND metric_type = 'video_count')  AS yt_base,
-           MAX(latest_value) FILTER (WHERE source_type = 'youtube' AND metric_type = 'view_count')   AS yt_views
-      FROM joined
+           MAX(value) FILTER (WHERE source_type = 'naver'   AND metric_type = 'search_index')        AS search_index,
+           MAX(value) FILTER (WHERE source_type = 'naver'   AND metric_type = 'search_growth_rate')  AS search_growth_rate,
+           MAX(value) FILTER (WHERE source_type = 'youtube' AND metric_type = 'video_count')         AS yt_video_count,
+           MAX(value) FILTER (WHERE source_type = 'youtube' AND metric_type = 'view_count')          AS yt_view_count,
+           MAX(value) FILTER (WHERE source_type = 'youtube' AND metric_type = 'mention_growth_rate') AS mention_growth_rate
+      FROM latest
      GROUP BY trend_id
   )
 `;
 
-/** metrics CTE 결과를 증감률(%) 컬럼으로 변환. 기준값이 없거나 0이면 NULL. */
 const METRIC_COLUMNS = `
-  CASE WHEN mt.naver_base > 0
-       THEN ROUND(((mt.naver_latest - mt.naver_base) / mt.naver_base) * 100, 1)
-  END AS search_growth_rate,
-  CASE WHEN mt.yt_base > 0
-       THEN ROUND(((mt.yt_latest - mt.yt_base) / mt.yt_base) * 100, 1)
-  END AS mention_growth_rate,
-  mt.naver_latest AS search_index,
-  mt.yt_latest    AS youtube_video_count,
-  mt.yt_views     AS youtube_view_count
+  mt.search_growth_rate,
+  mt.mention_growth_rate,
+  mt.search_index,
+  mt.yt_video_count AS youtube_video_count,
+  mt.yt_view_count  AS youtube_view_count
 `;
 
 /**
