@@ -1,11 +1,20 @@
 # TrendPick 백엔드 API 스펙
 
-로컬 개발 기준 base URL: `http://localhost:4000`
-(배포되면 이 문서 상단에 배포 URL 추가 예정)
+**Base URL**
+
+| 환경 | 주소 |
+|---|---|
+| 배포 | `https://zuki-t2rf.onrender.com` |
+| 로컬 | `http://localhost:4000` |
+
+프론트엔드는 `NEXT_PUBLIC_API_URL` 환경변수에 위 배포 주소를 넣으면 됩니다.
+
+> 무료 플랜이라 15분간 요청이 없으면 인스턴스가 잠듭니다. 이때 첫 요청은 응답까지 50초 이상 걸릴 수 있고, 그 뒤로는 정상 속도입니다. 서비스가 죽은 게 아니라 깨어나는 중이니 타임아웃을 넉넉히 잡아주세요.
 
 응답은 전부 JSON. 에러는 `{ "error": "메시지" }` 형태로 옵니다.
 
-> **데모 페이지**: 서버 실행 후 `http://localhost:4000/demo.html` 에 접속하면 아래 API를 전부 브라우저에서 직접 호출해볼 수 있습니다.
+> **데모 페이지**: [`https://zuki-t2rf.onrender.com/demo.html`](https://zuki-t2rf.onrender.com/demo.html) (로컬은 `http://localhost:4000/demo.html`)
+> 아래 API를 전부 브라우저에서 직접 호출해볼 수 있습니다.
 > (`backend/public/demo.html` — 백엔드 단독 시연·수동 테스트용. curl/Postman 대신 사용하면 편합니다.)
 
 ---
@@ -121,11 +130,42 @@
   "scoreHistory": [
     { "score": "62.00", "status": "rising", "recorded_date": "2026-07-21" },
     { "score": "88.00", "status": "peak", "recorded_date": "2026-07-27" }
+  ],
+  "searchIndexHistory": [
+    { "recorded_date": "2026-07-27", "search_index": "90.39" },
+    { "recorded_date": "2026-07-28", "search_index": "88.10" }
   ]
 }
 ```
 
+> **"검색량 추이" 그래프는 `searchIndexHistory`를 쓰세요.**
+> `scoreHistory`는 랭킹 점수 이력이라 "네이버 데이터랩 기준 상대 검색지수(0~100)"라는 화면 라벨과 맞지 않습니다.
+
 없는 id면 `404 { "error": "해당 트렌드를 찾을 수 없습니다." }`
+
+---
+
+## score와 status의 의미
+
+**`status` (확산 단계)** — 수준(검색지수)과 모멘텀(증감률) 2차원으로 분류합니다.
+
+| | 감소 (−15%↓) | 정체 | 증가 (+15%↑) |
+|---|---|---|---|
+| 지수 60 이상 | `declining` | `peak` | `peak` |
+| 지수 30~60 | `declining` | `rising` | `rising` |
+| 지수 30 미만 | `emerging` | `emerging` | `emerging` |
+
+증감률만으로 판정하면 밑바닥에서 시작한 무명 키워드(+100%)가 전성기로, 이미 큰 트렌드(+12%)가 태동기로 뒤집힙니다. 그래서 두 축을 함께 봅니다.
+
+**`score` (랭킹 점수, 0~100)** — "지금 주목할 가치"
+
+```
+검색지수 × 0.6  +  증감률(−100~100을 0~100으로 변환) × 0.4
+```
+
+증감률에 상한을 두는 이유는 지수 1→3으로 오른 무명 키워드가 200% 증가로 1위를 먹는 걸 막기 위해서입니다.
+
+> `score`는 **증감률이 아닙니다.** 화면에 "검색량 +N%"로 표시하려면 `search_growth_rate`를, "언급량"은 `mention_growth_rate`를 쓰세요.
 
 ---
 
@@ -201,7 +241,47 @@
 
 ### GET /api/admin/keywords
 
-등록된 키워드 전체 목록.
+등록된 키워드 전체 목록 (최대 500개). `?candidate=true`면 아직 카드로 승격 안 된 후보만.
+
+응답에 `source`(`editor`|`youtube`|`seed`)와 `last_collected_at`이 포함됩니다.
+
+### POST /api/admin/keywords/discover
+
+후보 키워드를 발굴해 등록합니다.
+
+```json
+{ "youtube": true, "seed": true, "seedLimit": 300 }
+```
+
+- `youtube` — 유튜브 인기 급상승 영상 제목에서 디저트/음료 단어 추출 (3 unit 소모)
+- `seed` — 재료 × 형태 조합 생성 (외부 호출 없음)
+- 셋 다 선택이며 기본값은 위와 같습니다.
+
+응답:
+```json
+{ "discovered": 312, "inserted": 289, "skipped": 23, "errors": [] }
+```
+
+이미 등록된 키워드는 건드리지 않습니다(에디터가 카드에 연결해둔 키워드를 덮어쓰지 않기 위해).
+여기서는 후보를 쌓기만 하고, 검색량은 다음 수집 배치가 채웁니다.
+
+### GET /api/admin/keywords/rising
+
+급상승 중인 후보 키워드 — "무엇을 트렌드 카드로 만들지" 고르는 용도.
+
+쿼리: `limit`(기본 30, 최대 200), `minIndex`(기본 1), `includeLinked`(기본 false)
+
+```json
+{
+  "keywords": [
+    { "id": 42, "keyword": "흑임자라떼", "source": "youtube", "trend_id": null,
+      "search_index": "34.20", "collected_date": "2026-07-28", "growth_rate": 68.4 }
+  ]
+}
+```
+
+`growth_rate`가 `null`이면 비교할 과거 데이터가 없다는 뜻(수집 2일차부터 값 생성).
+검색량이 미미한 조합 생성물은 `minIndex`로 걸러집니다.
 
 ### POST /api/admin/collect
 

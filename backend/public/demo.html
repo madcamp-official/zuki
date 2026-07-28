@@ -219,6 +219,38 @@
     </div>
 
     <div class="card">
+      <h2><span class="method">POST</span>/api/admin/keywords/discover — 후보 키워드 발굴</h2>
+      <p class="hint">
+        네이버 데이터랩은 "이 키워드가 뜨나?"에만 답하고 "뭐가 뜨나?"는 못 알려줍니다.
+        그래서 감시할 후보를 따로 만들어냅니다 — <strong>유튜브 인기 급상승 영상 제목에서 추출</strong>(3 unit)하고,
+        <strong>재료 × 형태 조합</strong>(예: 흑임자 + 라떼)을 생성합니다.
+        여기서는 후보를 쌓기만 하고, 검색량은 다음 수집 배치가 채웁니다.
+      </p>
+      <div class="row">
+        <div>
+          <label>조합 생성 개수</label>
+          <input id="dSeedLimit" type="number" value="300" min="0" max="900" />
+        </div>
+      </div>
+      <button class="go" onclick="discoverKeywords(true, true)">둘 다 실행</button>
+      <button class="go ghost" onclick="discoverKeywords(true, false)">유튜브만</button>
+      <button class="go ghost" onclick="discoverKeywords(false, true)">조합만</button>
+      <pre class="out" id="discoverOut"></pre>
+    </div>
+
+    <div class="card">
+      <h2><span class="method">GET</span>/api/admin/keywords/rising — 급상승 후보</h2>
+      <p class="hint">검색량이 오르고 있는 후보 키워드입니다. 여기서 골라 위쪽에서 트렌드 카드로 만들면 됩니다.</p>
+      <div class="row">
+        <div><label>최소 검색지수</label><input id="rMinIndex" type="number" value="1" min="0" /></div>
+        <div><label>개수</label><input id="rLimit" type="number" value="30" min="1" max="200" /></div>
+      </div>
+      <button class="go" onclick="loadRising()">조회</button>
+      <div id="risingList"></div>
+      <pre class="out" id="risingOut"></pre>
+    </div>
+
+    <div class="card">
       <h2><span class="method">POST</span>/api/admin/collect — 수집 배치 즉시 실행</h2>
       <p class="hint">
         평소엔 매일 새벽 3시에 node-cron이 자동 실행합니다. 여기서 누르면 기다리지 않고 바로 돌립니다.<br />
@@ -444,6 +476,57 @@ async function createKeyword() {
 async function listKeywords() {
   try { show('kwOut', await call('/api/admin/keywords')); }
   catch (e) { show('kwOut', '실패: ' + e.message); }
+}
+
+async function discoverKeywords(youtube, seed) {
+  show('discoverOut', '발굴 중…');
+  try {
+    show('discoverOut', await call('/api/admin/keywords/discover', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        youtube, seed,
+        seedLimit: Number(document.getElementById('dSeedLimit').value) || 300,
+      }),
+    }));
+  } catch (e) { show('discoverOut', '실패: ' + e.message); }
+}
+
+async function loadRising() {
+  const params = new URLSearchParams({
+    minIndex: document.getElementById('rMinIndex').value || '1',
+    limit: document.getElementById('rLimit').value || '30',
+  });
+  const list = document.getElementById('risingList');
+  list.innerHTML = '';
+  show('risingOut', '');
+  try {
+    const { keywords, note } = await call('/api/admin/keywords/rising?' + params);
+    if (!keywords.length) {
+      show('risingOut', '아직 수집된 후보가 없습니다. 발굴 → 수집 배치를 먼저 실행하세요.');
+      return;
+    }
+    const rows = keywords.map((k) => `
+      <tr>
+        <td style="padding:6px 10px">${escapeHtml(k.keyword)}</td>
+        <td style="padding:6px 10px;color:var(--muted)">${escapeHtml(k.source)}</td>
+        <td style="padding:6px 10px;text-align:right">${k.search_index ?? '-'}</td>
+        <td style="padding:6px 10px;text-align:right">${k.growth_rate != null ? fmtPct(k.growth_rate) : '—'}</td>
+        <td style="padding:6px 10px;color:var(--muted)">${k.trend_id ? '카드 있음' : '후보'}</td>
+      </tr>`).join('');
+    list.innerHTML = `
+      <table style="width:100%;border-collapse:collapse;margin-top:12px;font-size:13px">
+        <thead><tr style="border-bottom:1px solid var(--border);color:var(--muted);font-size:12px">
+          <th style="text-align:left;padding:6px 10px">키워드</th>
+          <th style="text-align:left;padding:6px 10px">출처</th>
+          <th style="text-align:right;padding:6px 10px">검색지수</th>
+          <th style="text-align:right;padding:6px 10px">증감률</th>
+          <th style="text-align:left;padding:6px 10px">상태</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+      <p class="hint">${escapeHtml(note || '')}</p>`;
+  } catch (e) { show('risingOut', '실패: ' + e.message); }
 }
 
 async function runCollect() {

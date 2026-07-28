@@ -170,7 +170,21 @@ export async function getTrendDetail(req: Request, res: Response) {
     [id]
   );
 
-  res.json({ trend, scoreHistory: history });
+  // 프론트 "검색량 추이" 그래프용 — 네이버 검색지수 원본 시계열.
+  // scoreHistory(점수 이력)와는 다른 값이다. 화면 라벨이 "네이버 데이터랩 기준
+  // 상대 검색지수(0~100)"이므로 이 배열을 써야 맞다.
+  const searchIndexHistory = await query(
+    `SELECT km.collected_date AS recorded_date, km.value AS search_index
+       FROM keywords k
+       JOIN keyword_metrics km ON km.keyword_id = k.id
+      WHERE k.trend_id = $1
+        AND km.source_type = 'naver'
+        AND km.metric_type = 'search_index'
+      ORDER BY km.collected_date ASC`,
+    [id]
+  );
+
+  res.json({ trend, scoreHistory: history, searchIndexHistory });
 }
 
 /**

@@ -26,11 +26,13 @@ export async function fetchYoutubeStats(keyword: string, maxResults = 10): Promi
     throw new Error('YOUTUBE_API_KEY가 설정되지 않았습니다.');
   }
 
+  // order=date(최신순)로 뽑으면 갓 올라온 영상들만 잡혀 조회수 합이 노이즈 덩어리가 된다.
+  // viewCount(조회수순)로 바꿔 "이 키워드에서 실제로 많이 본 영상"을 기준으로 삼는다.
   const searchParams = new URLSearchParams({
     part: 'id',
     q: keyword,
     type: 'video',
-    order: 'date',
+    order: 'viewCount',
     maxResults: String(maxResults),
     key: apiKey,
   });
