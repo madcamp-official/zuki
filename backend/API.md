@@ -50,8 +50,10 @@
 - `category` — 카테고리 slug (`dessert` | `beverage` | `marketing`)
 - `status` — `emerging` | `rising` | `peak` | `declining`
 - `limit` — 기본 20, 최대 100
+- `sort` — `latest`(기본, 최신순) | `score`(점수 높은 순). **랭킹 화면은 `sort=score`를 쓰면 됩니다.**
+  전체를 받아서 프론트에서 정렬할 필요가 없어집니다.
 
-예: `GET /api/trends?category=dessert&status=peak&limit=10`
+예: `GET /api/trends?category=dessert&status=peak&limit=10&sort=score`
 
 ```json
 {
@@ -66,11 +68,36 @@
       "region_scope": "nationwide",
       "created_at": "2026-07-27T...",
       "category_name": "디저트",
-      "category_slug": "dessert"
+      "category_slug": "dessert",
+
+      "search_growth_rate": 24.5,
+      "mention_growth_rate": 12.1,
+      "search_index": "90.39",
+      "youtube_video_count": "956205.00",
+      "youtube_view_count": "11680.00",
+      "score_history": [
+        { "score": 62, "status": "rising", "recorded_date": "2026-07-21" },
+        { "score": 88, "status": "peak",   "recorded_date": "2026-07-27" }
+      ]
     }
   ]
 }
 ```
+
+**수집 지표 필드 설명** (아래 5개는 2026-07-28 추가, 기존 필드는 그대로라 하위 호환됩니다)
+
+| 필드 | 의미 |
+|---|---|
+| `search_growth_rate` | 네이버 검색지수 증감률(%). 최근 7일 내 가장 오래된 값 대비 |
+| `mention_growth_rate` | 유튜브 영상 수 증감률(%). 계산 방식 동일 |
+| `search_index` | 네이버 검색어트렌드 지수 최신값 (0~100 상대지수) |
+| `youtube_video_count` | 키워드 검색 결과 영상 수 |
+| `youtube_view_count` | 최근 영상 10개의 조회수 합 |
+| `score_history` | 최근 14일 스코어 추이 (오래된 날짜 → 최신 순). 데이터 없으면 `[]` |
+
+> **증감률이 `null`인 경우**: 비교할 과거 데이터가 아직 없다는 뜻입니다. 수집 배치가 최소 2일 이상 돌아야 값이 생깁니다. 키워드가 연결되지 않은 트렌드도 전부 `null`입니다.
+>
+> `score_history`가 목록에도 들어가므로, 카드에 미니 그래프를 그릴 때 상세 API를 따로 부르지 않아도 됩니다.
 
 ### GET /api/trends/:id
 
@@ -178,7 +205,10 @@
 
 ### POST /api/admin/collect
 
-네이버/유튜브 수집 배치를 즉시 실행 (평소엔 매일 새벽 3시 자동 실행, 테스트용으로 수동 실행 가능). body 없음.
+네이버/유튜브 수집 배치를 즉시 실행. body 없음.
+
+`COLLECT_SECRET` 환경변수가 설정돼 있으면 `x-collect-secret` 헤더가 일치해야 합니다(불일치 시 `401`).
+비어 있으면 인증 없이 호출 가능합니다. 배포 환경에서는 외부 스케줄러가 이 API를 매일 호출해 자동 수집을 수행합니다.
 
 ```json
 {

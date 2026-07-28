@@ -82,10 +82,23 @@ export async function listKeywords(_req: Request, res: Response) {
 
 /**
  * POST /api/admin/collect
- * jobs/dailyCollect.ts의 배치를 크론 스케줄 기다리지 않고 즉시 실행 (테스트/운영 확인용)
- * 실제 운영에서는 node-cron이 매일 새벽 3시에 자동으로 호출함 (기획서 11-4 ④)
+ * jobs/dailyCollect.ts의 배치를 크론 스케줄 기다리지 않고 즉시 실행.
+ *
+ * 두 가지 용도로 쓰인다:
+ *  1) 개발/시연 중 수동 실행 (데모 페이지 버튼)
+ *  2) 외부 스케줄러(cron-job.org 등)가 매일 1회 호출 → 잠든 인스턴스를 깨우면서 수집까지 수행
+ *     (Render 무료 플랜은 15분 미사용 시 슬립되어 node-cron이 뜨지 않기 때문)
+ *
+ * 이 API는 호출할 때마다 네이버·유튜브 할당량을 실제로 소모하므로,
+ * COLLECT_SECRET이 설정돼 있으면 x-collect-secret 헤더가 일치해야만 실행한다.
+ * 미설정 시에는 기존처럼 그냥 열려 있다(로컬 개발 편의 + 하위 호환).
  */
-export async function triggerCollect(_req: Request, res: Response) {
+export async function triggerCollect(req: Request, res: Response) {
+  const secret = process.env.COLLECT_SECRET;
+  if (secret && req.header('x-collect-secret') !== secret) {
+    throw new ApiError(401, '수집 실행 권한이 없습니다.');
+  }
+
   const summary = await runDailyCollect();
   res.json({ summary });
 }

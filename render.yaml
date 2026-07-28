@@ -28,3 +28,7 @@ services:
       # 미설정 시 전체 허용
       - key: CORS_ORIGIN
         sync: false
+      # 수집 실행 API 보호용. Render가 임의 문자열을 생성해준다.
+      # 외부 스케줄러(cron-job.org)에 x-collect-secret 헤더로 같은 값을 넣어야 한다.
+      - key: COLLECT_SECRET
+        generateValue: true

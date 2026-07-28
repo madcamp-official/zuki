@@ -128,6 +128,13 @@
           </select>
         </div>
         <div>
+          <label>정렬</label>
+          <select id="fSort">
+            <option value="latest">최신순 (latest)</option>
+            <option value="score">점수순 (score)</option>
+          </select>
+        </div>
+        <div>
           <label>개수 (limit)</label>
           <input id="fLimit" type="number" value="20" min="1" max="100" />
         </div>
@@ -306,9 +313,11 @@ async function loadTrends() {
   const c = document.getElementById('fCategory').value;
   const s = document.getElementById('fStatus').value;
   const l = document.getElementById('fLimit').value;
+  const so = document.getElementById('fSort').value;
   if (c) params.set('category', c);
   if (s) params.set('status', s);
   if (l) params.set('limit', l);
+  if (so) params.set('sort', so);
 
   const list = document.getElementById('trendList');
   const empty = document.getElementById('trendEmpty');
@@ -326,6 +335,11 @@ async function loadTrends() {
         document.getElementById('bmTrendId').value = t.id;
         loadDetail();
       };
+      const growth = [];
+      if (t.search_growth_rate != null) growth.push(`검색 ${fmtPct(t.search_growth_rate)}`);
+      if (t.mention_growth_rate != null) growth.push(`언급 ${fmtPct(t.mention_growth_rate)}`);
+      const points = (t.score_history || []).length;
+
       div.innerHTML = `
         <h3>${escapeHtml(t.title)}</h3>
         <p>${escapeHtml(t.summary || '요약 없음')}</p>
@@ -333,6 +347,10 @@ async function loadTrends() {
           <span class="badge gray">${escapeHtml(t.category_name)}</span>
           <span class="badge">${STATUS_LABEL[t.status] || t.status}</span>
           <span class="score">score ${t.score ?? '-'}</span>
+        </div>
+        <div class="trend-meta" style="font-size:12px;color:var(--muted)">
+          ${growth.length ? growth.join(' · ') : '증감률 데이터 없음'}
+          <span style="margin-left:auto">추이 ${points}일</span>
         </div>`;
       list.appendChild(div);
     });
@@ -442,6 +460,11 @@ async function runCollect() {
     btn.disabled = false;
     btn.textContent = '수집 실행';
   }
+}
+
+function fmtPct(v) {
+  const n = Number(v);
+  return (n > 0 ? '+' : '') + n.toFixed(1) + '%';
 }
 
 function escapeHtml(s) {
