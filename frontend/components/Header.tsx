@@ -1,5 +1,11 @@
+"use client";
+
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
+import type { User } from "@supabase/supabase-js";
+import { createClient } from "@/lib/supabase";
 
 const NAV_ITEMS = [
   { label: "홈", href: "/" },
@@ -9,6 +15,34 @@ const NAV_ITEMS = [
 ];
 
 export default function Header() {
+  const router = useRouter();
+  const [user, setUser] = useState<User | null>(null);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    const supabase = createClient();
+
+    supabase.auth.getUser().then(({ data }) => {
+      setUser(data.user);
+      setLoaded(true);
+    });
+
+    const { data: subscription } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        setUser(session?.user ?? null);
+      },
+    );
+
+    return () => subscription.subscription.unsubscribe();
+  }, []);
+
+  const handleLogout = async () => {
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    router.push("/");
+    router.refresh();
+  };
+
   return (
     <header className="sticky top-0 z-50 border-b border-[#f3e7df] bg-cream/95 backdrop-blur">
       <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-3 sm:px-6">
@@ -49,12 +83,21 @@ export default function Header() {
           >
             <Image src="/images/bell.png" alt="" fill className="object-contain p-1.5" />
           </button>
-          <Link
-            href="/login"
-            className="rounded-full bg-strawberry px-5 py-2 font-button text-sm font-semibold text-white transition-colors hover:bg-rose-500"
-          >
-            로그인
-          </Link>
+          {loaded && user ? (
+            <button
+              onClick={handleLogout}
+              className="rounded-full border border-strawberry/30 px-5 py-2 font-button text-sm font-semibold text-strawberry transition-colors hover:bg-rose-50"
+            >
+              로그아웃
+            </button>
+          ) : (
+            <Link
+              href="/login"
+              className="rounded-full bg-strawberry px-5 py-2 font-button text-sm font-semibold text-white transition-colors hover:bg-rose-500"
+            >
+              로그인
+            </Link>
+          )}
         </div>
       </div>
     </header>
