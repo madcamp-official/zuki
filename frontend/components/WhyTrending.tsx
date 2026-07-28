@@ -7,8 +7,8 @@ export default function WhyTrending({ trend }: { trend?: TrendItem }) {
   }
 
   return (
-    <section className="grid gap-4 overflow-hidden rounded-[24px] border border-[#f4e3d7] bg-white/65 p-4 sm:grid-cols-[1fr_1.3fr]">
-      <div className="relative min-h-[240px] overflow-hidden rounded-[18px]">
+    <section className="grid gap-4 overflow-hidden rounded-[24px] border border-[#f1dfd3] bg-[#fffaf5] p-0 sm:grid-cols-[1fr_1.35fr]">
+      <div className="relative min-h-[270px] overflow-hidden rounded-l-[24px]">
         <Image
           src={trend.image}
           alt={trend.title}
@@ -18,7 +18,7 @@ export default function WhyTrending({ trend }: { trend?: TrendItem }) {
         />
       </div>
 
-      <div className="flex flex-col justify-center gap-3">
+      <div className="flex flex-col justify-center gap-3 p-5">
         <span className="w-fit rounded-full bg-yellow/40 px-3 py-1 text-xs font-semibold text-amber-700">
           WHY IT&apos;S TRENDING?
         </span>
