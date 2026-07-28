@@ -24,6 +24,11 @@ services:
         sync: false
       - key: YOUTUBE_API_KEY
         sync: false
+      # Supabase Auth — JWT 검증용 공개키(JWKS)를 SUPABASE_URL에서 가져온다
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
       # 프론트 배포 후 해당 도메인으로 좁힐 것 (쉼표로 여러 개 가능)
       # 미설정 시 전체 허용
       - key: CORS_ORIGIN

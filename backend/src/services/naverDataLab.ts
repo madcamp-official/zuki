@@ -34,7 +34,8 @@ export const NAVER_MAX_KEYWORDS_PER_CALL = 5;
  */
 export async function fetchNaverTrends(
   keywords: string[],
-  months = 3
+  months = 3,
+  timeUnit: 'date' | 'week' | 'month' = 'date'
 ): Promise<NaverTrendResult[]> {
   const clientId = process.env.NAVER_CLIENT_ID;
   const clientSecret = process.env.NAVER_CLIENT_SECRET;
@@ -58,7 +59,7 @@ export async function fetchNaverTrends(
   const body = {
     startDate: fmt(startDate),
     endDate: fmt(endDate),
-    timeUnit: 'date',
+    timeUnit,
     keywordGroups: keywords.map((kw) => ({ groupName: kw, keywords: [kw] })),
   };
 
@@ -95,6 +96,60 @@ export async function fetchNaverTrends(
  *
  * 일부 묶음이 실패해도 나머지는 살리기 위해 묶음 단위로 에러를 잡는다.
  */
+export interface SeasonalCheck {
+  keyword: string;
+  /** 올해 이번 달 지수 */
+  thisYear: number | null;
+  /** 작년 같은 달 지수 */
+  lastYear: number | null;
+  /** 작년 같은 달 대비 증감률(%) */
+  yoyGrowthRate: number | null;
+  /**
+   * 계절성 반복인지 여부.
+   * 작년 같은 달에도 비슷하게 높았다면 "매년 이맘때 오르는 것"이라 신규 트렌드가 아니다.
+   */
+  isSeasonal: boolean;
+}
+
+/**
+ * 계절성 판별 — "지금 오르는 게 새로운 유행인가, 매년 반복되는 패턴인가"
+ *
+ * 왜 필요한가:
+ *   7월에 팥빙수 검색이 오르는 건 트렌드가 아니라 여름이라서다.
+ *   최근 7일 대 이전 7일만 비교하면 이런 계절 메뉴가 전부 "상승 중"으로 잡힌다.
+ *   작년 같은 달과 비교해야 "올해만 유독 뜨는 것"을 가려낼 수 있다.
+ *
+ * timeUnit='month'로 2년치를 받아 이번 달과 작년 같은 달을 비교한다.
+ * 일별 조회와 달리 데이터 양이 적어 응답도 빠르다.
+ */
+export async function fetchSeasonalCheck(keywords: string[]): Promise<SeasonalCheck[]> {
+  // 24개월치 월간 데이터
+  const results = await fetchNaverTrends(keywords, 24, 'month');
+
+  return results.map((r) => {
+    const points = r.points;
+    if (points.length === 0) {
+      return { keyword: r.keyword, thisYear: null, lastYear: null, yoyGrowthRate: null, isSeasonal: false };
+    }
+
+    const thisYear = points[points.length - 1].ratio;
+    // 12개월 전 = 작년 같은 달
+    const lastYearIdx = points.length - 1 - 12;
+    const lastYear = lastYearIdx >= 0 ? points[lastYearIdx].ratio : null;
+
+    const yoyGrowthRate =
+      lastYear !== null && lastYear > 0
+        ? Math.round(((thisYear - lastYear) / lastYear) * 1000) / 10
+        : null;
+
+    // 작년 같은 달에도 올해의 70% 이상 수준이었다면 계절성 반복으로 본다.
+    // (올해만 튀는 신규 트렌드라면 작년 같은 달은 훨씬 낮아야 한다)
+    const isSeasonal = lastYear !== null && thisYear > 0 && lastYear >= thisYear * 0.7;
+
+    return { keyword: r.keyword, thisYear, lastYear, yoyGrowthRate, isSeasonal };
+  });
+}
+
 export async function fetchNaverTrendsBatched(
   keywords: string[],
   months = 3

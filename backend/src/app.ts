@@ -34,6 +34,17 @@ app.get('/health', (_req, res) => {
   res.json({ status: 'ok', service: 'trendpick-backend', time: new Date().toISOString() });
 });
 
+/**
+ * 프론트엔드·데모 페이지가 Supabase 클라이언트를 초기화하는 데 필요한 값.
+ * 둘 다 공개용 키라 노출해도 안전하다 (서비스 롤 키는 절대 여기 넣지 말 것).
+ */
+app.get('/api/config', (_req, res) => {
+  res.json({
+    supabaseUrl: process.env.SUPABASE_URL ?? null,
+    supabaseAnonKey: process.env.SUPABASE_ANON_KEY ?? null,
+  });
+});
+
 // 루트로 들어온 사람에게 어디로 가야 하는지 알려준다.
 // (API 서버라 루트에 화면은 없지만, 빈 404보다 안내가 낫다)
 app.get('/', (_req, res) => {

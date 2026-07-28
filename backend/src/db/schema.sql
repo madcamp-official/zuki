@@ -35,9 +35,12 @@ CREATE TABLE categories (
 -- 2. users : 카페 사장님 계정
 -- Supabase Auth 사용 시 id는 auth.users.id를 그대로 FK로 참조 (1:1)
 -- ---------------------------------------------------------------------
+-- 서비스 프로필만 담는다. 계정(비밀번호·이메일 인증·소셜 로그인)은 auth.users가 관리하며
+-- 두 테이블은 같은 id를 공유한다. 프로필 행은 인증된 첫 요청 때 백엔드가 자동 생성한다.
 CREATE TABLE users (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),  -- Supabase 사용 시 auth.users(id) 참조로 교체
-    email           VARCHAR(255) NOT NULL UNIQUE,
+    id              UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+    -- 전화번호 가입·소셜 로그인 등 이메일이 없는 계정도 있어 nullable
+    email           VARCHAR(255) UNIQUE,
     store_name      VARCHAR(100),
     region_si       VARCHAR(30),                -- 시/도 (예: 서울특별시) — 지역별 확산 속도 차이 파악용 (기획서 9, 16)
     region_gu       VARCHAR(30),                -- 시/군/구 (예: 강남구)
@@ -93,7 +96,13 @@ CREATE TABLE keywords (
     -- 발굴 시 최근 글 제목에서 몇 번 언급됐는지.
     -- "최근 글에 자주 나오는데 검색량은 아직 낮다"가 태동기의 신호라서,
     -- 검색지수만으로는 스테디셀러와 신흥 트렌드를 구분할 수 없다.
-    mention_count     INTEGER NOT NULL DEFAULT 0,
+    mention_count       INTEGER NOT NULL DEFAULT 0,
+    -- 언급 추이 측정 시 확보한 기간(일). 14 미만이면 증가율 신뢰도가 낮다
+    mention_window_days INTEGER,
+    -- 계절성 반복 여부. 7월의 팥빙수처럼 매년 이맘때 오르는 것은 트렌드가 아니다.
+    -- 작년 같은 달과 비교해 판별한다 (데이터랩 timeUnit=month, 24개월)
+    is_seasonal         BOOLEAN NOT NULL DEFAULT false,
+    yoy_growth_rate     NUMERIC(10,2),
     discovered_at     TIMESTAMPTZ,
     last_collected_at TIMESTAMPTZ,
     created_at        TIMESTAMPTZ NOT NULL DEFAULT now()

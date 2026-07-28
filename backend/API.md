@@ -171,11 +171,96 @@
 
 ---
 
+## 인증 (Supabase Auth)
+
+`/api/users/*` 는 전부 로그인이 필요합니다. **`x-user-id` 임시 인증은 제거됐습니다.**
+
+```
+Authorization: Bearer <Supabase access token>
+```
+
+### 프론트엔드 연동
+
+```bash
+npm install @supabase/supabase-js
+```
+
+```ts
+// lib/supabase.ts
+import { createClient } from "@supabase/supabase-js";
+
+export const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+);
+```
+
+```ts
+// 회원가입
+const { data, error } = await supabase.auth.signUp({ email, password });
+
+// 로그인
+const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+
+// 로그아웃
+await supabase.auth.signOut();
+
+// 현재 세션 (토큰은 supabase-js가 localStorage에 보관하고 자동 갱신함)
+const { data: { session } } = await supabase.auth.getSession();
+```
+
+```ts
+// API 호출 시 토큰 첨부 — lib/api.ts의 apiFetch에 추가
+const { data: { session } } = await supabase.auth.getSession();
+
+const res = await fetch(`${API_URL}${path}`, {
+  headers: {
+    "Content-Type": "application/json",
+    ...(session ? { Authorization: `Bearer ${session.access_token}` } : {}),
+  },
+});
+```
+
+`.env.local`에 넣을 값:
+
+```
+NEXT_PUBLIC_SUPABASE_URL=https://bnghhjikybnoztaxjuey.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon key>
+```
+
+anon key는 `GET /api/config`로도 받을 수 있습니다(둘 다 공개용 키라 노출돼도 안전).
+
+> **가입 직후 토큰이 안 나온다면** Supabase 대시보드 → Authentication → Providers → Email에서 "Confirm email"이 켜져 있는 것입니다. 개발 중에는 꺼두면 가입 즉시 로그인됩니다.
+
+### 사용자 프로필
+
+`public.users`는 서비스 프로필(매장명·지역·권한)만 담고, 계정 자체는 `auth.users`가 관리합니다. 두 테이블은 같은 `id`를 공유하며 FK로 묶여 있고, **프로필 행은 인증된 첫 요청 때 백엔드가 자동으로 만듭니다.** 별도 회원가입 API를 부를 필요가 없습니다.
+
+### GET /api/users/me
+
+```json
+{
+  "user": { "id": "...", "email": "...", "store_name": null,
+            "region_si": null, "region_gu": null, "role": "owner", "created_at": "..." },
+  "categoryInterests": [{ "id": 1, "name": "디저트", "slug": "dessert" }]
+}
+```
+
+`role`은 `owner`(기본) | `editor` | `admin`.
+
+### PATCH /api/users/me
+
+```json
+{ "storeName": "규민카페", "regionSi": "대전광역시", "regionGu": "유성구" }
+```
+
+셋 다 선택이며 보낸 항목만 수정됩니다. `role`은 여기서 바꿀 수 없습니다(권한 상승 방지).
+
+---
+
 ## 사용자 (즐겨찾기 / 관심 카테고리)
 
-> 인증이 아직 없어서 임시로 **모든 요청에 `x-user-id` 헤더**가 필요합니다.
-> 값은 아무 UUID나 써도 되지만, 같은 사용자면 항상 같은 값을 보내야 그 사람 데이터로 취급됩니다.
-> 나중에 Supabase Auth 붙으면 이 헤더는 없어지고 로그인 토큰 기반으로 바뀔 예정.
+아래 엔드포인트도 전부 `Authorization: Bearer` 헤더가 필요합니다.
 
 ### GET /api/users/me/bookmarks
 
@@ -206,7 +291,33 @@
 
 ---
 
-## 관리자 (에디터용, 별도 관리자 화면 나오기 전까지 이 API로 직접 등록)
+## 관리자 (에디터용)
+
+> **`/api/admin/*` 는 관리자 로그인이 필요합니다.**
+> `Authorization: Bearer <access token>` 헤더가 있어야 하고, 해당 계정의 `role`이 `editor` 또는 `admin`이어야 합니다.
+> 권한이 없으면 `403 { "error": "관리자 권한이 필요합니다." }`.
+>
+> **왜 막았나** — 이 API들은 실제 비용과 할당량을 소모합니다. `POST /trends`는 `imageUrl`을 안 넘기면 OpenAI로 이미지를 생성하고(호출당 과금), `/keywords/discover`와 `/collect`는 외부 API를 대량 호출합니다. 배포된 서버는 URL만 알면 누구나 접근할 수 있어 열어둘 수 없습니다.
+>
+> **예외** — `POST /collect`는 외부 스케줄러(cron-job.org)가 호출해야 해서 로그인 대신 `x-collect-secret` 헤더로 보호합니다.
+>
+> **로컬 개발** — `ADMIN_AUTH_DISABLED=true`로 두면 인증을 건너뜁니다. 배포 환경에서는 절대 켜지 마세요.
+
+### 관리자 권한 부여
+
+권한 부여를 API로 열면 "그 API는 누가 부를 수 있나"라는 순환 문제가 생기므로, DB에 직접 접근할 수 있는 사람이 스크립트로 부여합니다. 대상 계정은 **먼저 회원가입이 되어 있어야 합니다.**
+
+```bash
+cd backend
+npm run grant:admin -- gyumin3789@gmail.com          # admin 부여
+npm run grant:admin -- someone@example.com editor    # editor 부여
+```
+
+역할은 `owner`(기본, 사장님) | `editor`(트렌드 큐레이션) | `admin`.
+이미 로그인 중이었다면 로그아웃 후 재로그인해야 새 권한이 토큰에 반영됩니다.
+
+---
+
 
 ### POST /api/admin/trends
 

@@ -2,14 +2,72 @@ import { Request, Response } from 'express';
 import { query } from '../db/client';
 import { ApiError } from '../middlewares/errorHandler';
 
-// 인증(Supabase Auth) 연동 전까지는 요청 헤더의 x-user-id를 임시로 사용한다.
-// 실제 인증 미들웨어가 들어오면 이 부분을 req.user.id 로 교체할 것.
+// 인증은 requireAuth 미들웨어가 처리하고 req.user에 붙여준다.
+// (Supabase JWT 또는 하위 호환용 x-user-id 헤더)
 function requireUserId(req: Request): string {
-  const userId = req.header('x-user-id');
-  if (!userId) {
-    throw new ApiError(401, 'x-user-id 헤더가 필요합니다 (임시 인증, Supabase Auth 연동 전).');
+  if (!req.user) {
+    throw new ApiError(401, '로그인이 필요합니다.');
   }
-  return userId;
+  return req.user.id;
+}
+
+/**
+ * GET /api/users/me : 내 프로필
+ * 로그인 직후 프론트가 사용자 정보를 채우는 데 쓴다.
+ * 프로필 행은 인증 미들웨어가 첫 요청 때 자동 생성한다.
+ */
+export async function getMyProfile(req: Request, res: Response) {
+  const userId = requireUserId(req);
+
+  const [profile] = await query(
+    `SELECT id, email, store_name, region_si, region_gu, role, created_at
+       FROM users WHERE id = $1`,
+    [userId]
+  );
+
+  if (!profile) {
+    throw new ApiError(404, '프로필을 찾을 수 없습니다.');
+  }
+
+  const interests = await query(
+    `SELECT c.id, c.name, c.slug
+       FROM user_category_interests uci
+       JOIN categories c ON c.id = uci.category_id
+      WHERE uci.user_id = $1
+      ORDER BY c.sort_order`,
+    [userId]
+  );
+
+  res.json({ user: profile, categoryInterests: interests });
+}
+
+/**
+ * PATCH /api/users/me : 프로필 수정 (마이페이지)
+ * 매장명과 지역만 수정 가능. role은 여기서 바꿀 수 없다(권한 상승 방지).
+ */
+export async function updateMyProfile(req: Request, res: Response) {
+  const userId = requireUserId(req);
+  const { storeName, regionSi, regionGu } = req.body as {
+    storeName?: string;
+    regionSi?: string;
+    regionGu?: string;
+  };
+
+  const [updated] = await query(
+    `UPDATE users
+        SET store_name = COALESCE($2, store_name),
+            region_si  = COALESCE($3, region_si),
+            region_gu  = COALESCE($4, region_gu)
+      WHERE id = $1
+      RETURNING id, email, store_name, region_si, region_gu, role`,
+    [userId, storeName ?? null, regionSi ?? null, regionGu ?? null]
+  );
+
+  if (!updated) {
+    throw new ApiError(404, '프로필을 찾을 수 없습니다.');
+  }
+
+  res.json({ user: updated });
 }
 
 /** GET /api/users/me/bookmarks : 즐겨찾기 목록 (기획서 4-4) */

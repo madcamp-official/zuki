@@ -4,7 +4,9 @@ import {
   NAVER_MAX_KEYWORDS_PER_CALL,
   NaverTrendPoint,
   fetchNaverTrends,
+  fetchSeasonalCheck,
 } from '../services/naverDataLab';
+import { measureMentionTrend } from '../services/naverSearch';
 import { fetchYoutubeStats } from '../services/youtubeApi';
 import { calculateScore, classifyStatus } from '../services/scoring';
 
@@ -24,6 +26,13 @@ const NAVER_KEYWORD_LIMIT = Number(process.env.NAVER_KEYWORD_LIMIT ?? 500);
 
 /** 네이버 호출 사이 대기(ms). 연속 호출로 속도 제한에 걸리는 것을 방지 */
 const NAVER_CALL_DELAY_MS = Number(process.env.NAVER_CALL_DELAY_MS ?? 200);
+
+/**
+ * 언급 추이를 측정할 키워드 수 상한.
+ * 키워드당 블로그 검색 1~3회를 쓴다. 검색 API 한도는 하루 25,000회로 넉넉하지만
+ * 실행 시간이 길어지므로 제한을 둔다.
+ */
+const MENTION_TREND_LIMIT = Number(process.env.MENTION_TREND_LIMIT ?? 60);
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -108,8 +117,12 @@ async function upsertMetric(
 export interface DailyCollectSummary {
   startedAt: string;
   finishedAt: string;
-  /** 네이버로 훑은 키워드 수 (후보 포함 전체) */
+  /** 네이버 검색량(데이터랩)으로 훑은 키워드 수 */
   naverProcessed: number;
+  /** 블로그 언급 추이를 측정한 키워드 수 */
+  mentionMeasured: number;
+  /** 계절성 판별(작년 같은 달 비교)을 완료한 키워드 수 */
+  seasonalChecked: number;
   /** 유튜브까지 수집한 키워드 수 (트렌드 카드에 연결된 것만) */
   youtubeProcessed: number;
   /** 점수·확산단계가 갱신된 트렌드 카드 수 */
@@ -153,6 +166,8 @@ export async function runDailyCollect(): Promise<DailyCollectSummary> {
     startedAt: startedAt.toISOString(),
     finishedAt: '',
     naverProcessed: 0,
+    mentionMeasured: 0,
+    seasonalChecked: 0,
     youtubeProcessed: 0,
     trendsUpdated: 0,
     failed: 0,
@@ -229,7 +244,79 @@ export async function runDailyCollect(): Promise<DailyCollectSummary> {
     }
   }
 
-  console.log(`[dailyCollect] 네이버 완료: ${summary.naverProcessed}/${allKeywords.length}`);
+  console.log(`[dailyCollect] 네이버 검색량 완료: ${summary.naverProcessed}/${allKeywords.length}`);
+
+  // ---------------------------------------------------------------
+  // 1.5단계: 언급 추이 측정 (블로그 게시 속도의 변화)
+  //
+  // 검색량(데이터랩)과는 다른 신호다. 검색량은 "찾아본 사람 수",
+  // 언급량은 "글이 올라오는 속도"라서, 새로 뜨는 메뉴는 검색량보다
+  // 블로그 게시가 먼저 늘어나는 경우가 많다.
+  //
+  // 블로그 검색 응답의 postdate로 일별 집계가 가능하므로,
+  // 과거 데이터를 쌓아두지 않아도 오늘 바로 증가율을 계산할 수 있다.
+  // ---------------------------------------------------------------
+  const mentionTargets = allKeywords.slice(0, MENTION_TREND_LIMIT);
+
+  for (const kw of mentionTargets) {
+    try {
+      const trend = await measureMentionTrend(kw.keyword);
+
+      await upsertMetric(kw.id, 'naver', 'mention_count', trend.recentCount);
+      if (trend.growthRate !== null) {
+        await upsertMetric(kw.id, 'naver', 'mention_growth_rate', trend.growthRate);
+      }
+      await query(
+        `UPDATE keywords SET mention_count = $1, mention_window_days = $2 WHERE id = $3`,
+        [trend.recentCount, trend.windowDays, kw.id]
+      );
+
+      summary.mentionMeasured += 1;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(`[dailyCollect] "${kw.keyword}" 언급 추이 실패:`, message);
+      summary.errors.push({ keyword: kw.keyword, message });
+    }
+
+    await sleep(NAVER_CALL_DELAY_MS);
+  }
+
+  console.log(`[dailyCollect] 언급 추이 완료: ${summary.mentionMeasured}/${mentionTargets.length}`);
+
+  // ---------------------------------------------------------------
+  // 1.7단계: 계절성 판별 (작년 같은 달과 비교)
+  //
+  // 7월에 팥빙수 검색이 오르는 건 트렌드가 아니라 여름이라서다.
+  // 최근 7일 대 이전 7일만 보면 계절 메뉴가 전부 "상승 중"으로 잡히므로,
+  // 월간 24개월치를 받아 작년 같은 달과 비교해 걸러낸다.
+  // ---------------------------------------------------------------
+  for (let i = 0; i < allKeywords.length; i += NAVER_MAX_KEYWORDS_PER_CALL) {
+    const chunk = allKeywords.slice(i, i + NAVER_MAX_KEYWORDS_PER_CALL);
+    try {
+      const checks = await fetchSeasonalCheck(chunk.map((k) => k.keyword));
+      apiCallsUsed += 1;
+
+      for (const c of checks) {
+        const kw = byKeyword.get(c.keyword);
+        if (!kw) continue;
+        await query(
+          `UPDATE keywords SET is_seasonal = $1, yoy_growth_rate = $2 WHERE id = $3`,
+          [c.isSeasonal, c.yoyGrowthRate, kw.id]
+        );
+        summary.seasonalChecked += 1;
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(`[dailyCollect] 계절성 판별 실패:`, message);
+      summary.errors.push({ keyword: chunk.map((k) => k.keyword).join(', '), message });
+    }
+
+    if (i + NAVER_MAX_KEYWORDS_PER_CALL < allKeywords.length) {
+      await sleep(NAVER_CALL_DELAY_MS);
+    }
+  }
+
+  console.log(`[dailyCollect] 계절성 판별 완료: ${summary.seasonalChecked}/${allKeywords.length}`);
 
   // ---------------------------------------------------------------
   // 2단계: 트렌드 카드에 연결된 키워드만 유튜브 수집 + 점수 갱신
