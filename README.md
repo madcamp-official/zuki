@@ -102,7 +102,8 @@ graph TB
     subgraph Server["백엔드 서버 (Node.js + Express)"]
         Cron["node-cron<br/>매일 새벽 3시 자동 실행"]
         Collect["dailyCollect job<br/>키워드별 API 호출 → 원시값 저장"]
-        Scoring["scoring 서비스<br/>증감률 계산 → 가중합 → 확산단계 분류"]
+        Discover["keywordDiscovery<br/>유튜브 인기영상 · 재료×형태 조합"]
+        Scoring["scoring 서비스<br/>수준+모멘텀 → 확산단계 · 랭킹점수"]
         API["REST API<br/>/api/trends, /api/categories,<br/>/api/users/me/*, /api/admin/*"]
     end
 
@@ -303,12 +304,12 @@ npm run dev                # http://localhost:3000
 
 | 대상 | 주소 |
 |---|---|
-| 백엔드 API | https://zuki-t2rf.onrender.com |
-| 백엔드 데모 페이지 | https://zuki-t2rf.onrender.com/demo.html |
-| 헬스체크 | https://zuki-t2rf.onrender.com/health |
+| 백엔드 API | https://zuki-l2hu.onrender.com |
+| 백엔드 데모 페이지 | https://zuki-l2hu.onrender.com/demo.html |
+| 헬스체크 | https://zuki-l2hu.onrender.com/health |
 | 프론트엔드 | (Vercel 배포 예정) |
 
-프론트엔드는 `.env`에 `NEXT_PUBLIC_API_URL=https://zuki-t2rf.onrender.com`을 넣으면 배포된 백엔드에 붙는다.
+프론트엔드는 `.env`에 `NEXT_PUBLIC_API_URL=https://zuki-l2hu.onrender.com`을 넣으면 배포된 백엔드에 붙는다.
 
 ### 백엔드 배포 (Render)
 

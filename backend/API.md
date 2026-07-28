@@ -4,7 +4,7 @@
 
 | 환경 | 주소 |
 |---|---|
-| 배포 | `https://zuki-t2rf.onrender.com` |
+| 배포 | `https://zuki-l2hu.onrender.com` |
 | 로컬 | `http://localhost:4000` |
 
 프론트엔드는 `NEXT_PUBLIC_API_URL` 환경변수에 위 배포 주소를 넣으면 됩니다.
@@ -13,7 +13,7 @@
 
 응답은 전부 JSON. 에러는 `{ "error": "메시지" }` 형태로 옵니다.
 
-> **데모 페이지**: [`https://zuki-t2rf.onrender.com/demo.html`](https://zuki-t2rf.onrender.com/demo.html) (로컬은 `http://localhost:4000/demo.html`)
+> **데모 페이지**: [`https://zuki-l2hu.onrender.com/demo.html`](https://zuki-l2hu.onrender.com/demo.html) (로컬은 `http://localhost:4000/demo.html`)
 > 아래 API를 전부 브라우저에서 직접 호출해볼 수 있습니다.
 > (`backend/public/demo.html` — 백엔드 단독 시연·수동 테스트용. curl/Postman 대신 사용하면 편합니다.)
 
@@ -99,9 +99,9 @@
 |---|---|
 | `search_growth_rate` | 네이버 검색지수 증감률(%). 최근 7일 내 가장 오래된 값 대비 |
 | `mention_growth_rate` | 유튜브 영상 수 증감률(%). 계산 방식 동일 |
-| `search_index` | 네이버 검색어트렌드 지수 최신값 (0~100 상대지수) |
-| `youtube_video_count` | 키워드 검색 결과 영상 수 |
-| `youtube_view_count` | 최근 영상 10개의 조회수 합 |
+| `search_index` | 네이버 검색어트렌드 지수 (0~100 상대지수, 최근 7일 평균) |
+| `youtube_video_count` | 키워드 검색 결과 영상 수. YouTube의 추정치라 정밀하지 않음 |
+| `youtube_view_count` | 조회수 상위 영상 10개의 조회수 합 |
 | `score_history` | 최근 14일 스코어 추이 (오래된 날짜 → 최신 순). 데이터 없으면 `[]` |
 
 > **증감률이 `null`인 경우**: 비교할 과거 데이터가 아직 없다는 뜻입니다. 수집 배치가 최소 2일 이상 돌아야 값이 생깁니다. 키워드가 연결되지 않은 트렌드도 전부 `null`입니다.
@@ -294,10 +294,21 @@
 {
   "summary": {
     "startedAt": "...", "finishedAt": "...",
-    "totalKeywords": 3, "processed": 3, "failed": 0, "errors": []
+    "naverProcessed": 312,
+    "youtubeProcessed": 21,
+    "trendsUpdated": 21,
+    "failed": 0,
+    "errors": []
   }
 }
 ```
+
+수집은 2단계로 나뉩니다 — 유튜브 할당량이 훨씬 빡빡하기 때문입니다.
+
+| 단계 | 대상 | API | 상한 |
+|---|---|---|---|
+| 넓게 | 후보 포함 전체 키워드 | 네이버만 (5개씩 묶음) | `NAVER_KEYWORD_LIMIT` (기본 500) |
+| 깊게 | 트렌드 카드에 연결된 키워드 | 네이버 + 유튜브 | `YOUTUBE_KEYWORD_LIMIT` (기본 80) |
 
 ---
 

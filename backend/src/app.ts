@@ -34,6 +34,19 @@ app.get('/health', (_req, res) => {
   res.json({ status: 'ok', service: 'trendpick-backend', time: new Date().toISOString() });
 });
 
+// 루트로 들어온 사람에게 어디로 가야 하는지 알려준다.
+// (API 서버라 루트에 화면은 없지만, 빈 404보다 안내가 낫다)
+app.get('/', (_req, res) => {
+  res.json({
+    service: 'trendpick-backend',
+    message: 'TrendPick 백엔드 API 서버입니다.',
+    demo: '/demo.html',
+    health: '/health',
+    docs: 'https://github.com/madcamp-official/zuki/blob/main/backend/API.md',
+    endpoints: ['/api/trends', '/api/categories', '/api/users/me/*', '/api/admin/*'],
+  });
+});
+
 app.use('/api/trends', trendsRoutes);
 app.use('/api/categories', categoriesRouter);
 app.use('/api/users', usersRoutes);
