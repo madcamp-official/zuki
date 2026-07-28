@@ -189,12 +189,30 @@ export async function listRisingKeywords(req: Request, res: Response) {
   const limit = Math.min(Number(req.query.limit) || 30, 200);
   const minIndex = Number(req.query.minIndex ?? 1);
   const includeLinked = req.query.includeLinked === 'true';
+  /** 1회만 언급된 것은 대부분 가게 이름이나 일회성 표현이라 기본 제외 */
+  const minMentions = Number(req.query.minMentions ?? 2);
   /** 스테디셀러 제외: 검색지수가 이 값 이상인데 증감률이 미미하면 유행이 아니라 상시 메뉴 */
   const excludeStaples = req.query.excludeStaples !== 'false';
   const stapleIndex = Number(req.query.stapleIndex ?? 40);
   const stapleGrowth = Number(req.query.stapleGrowth ?? 5);
+  /** 계절성 반복(작년 같은 달에도 비슷하게 높았던 것) 제외 */
+  const excludeSeasonal = req.query.excludeSeasonal !== 'false';
 
-  // 증감률은 수집 시점에 네이버 3개월 시계열로 계산해 저장해둔 값을 그대로 읽는다.
+  // 조건이 선택적이라 파라미터 번호를 순차적으로 붙여 나간다
+  const params: unknown[] = [minIndex, minMentions];
+  const conditions: string[] = ['li.value >= $1', 'k.mention_count >= $2'];
+
+  if (!includeLinked) conditions.push('k.trend_id IS NULL');
+  if (excludeSeasonal) conditions.push('k.is_seasonal = false');
+  if (excludeStaples) {
+    params.push(stapleIndex, stapleGrowth);
+    conditions.push(
+      `NOT (li.value >= $${params.length - 1} AND COALESCE(lg.value, 0) < $${params.length})`
+    );
+  }
+  params.push(limit);
+
+  // 증감률은 수집 시점에 계산해 저장해둔 값을 그대로 읽는다.
   // (DB에 쌓인 날짜별 값끼리 다시 비교하면 이틀치가 쌓일 때까지 값이 안 나온다)
   const rows = await query(
     `WITH latest_index AS (
@@ -208,36 +226,55 @@ export async function listRisingKeywords(req: Request, res: Response) {
          FROM keyword_metrics
         WHERE source_type = 'naver' AND metric_type = 'search_growth_rate'
         ORDER BY keyword_id, collected_date DESC
+     ),
+     latest_mention_growth AS (
+       SELECT DISTINCT ON (keyword_id) keyword_id, value
+         FROM keyword_metrics
+        WHERE source_type = 'naver' AND metric_type = 'mention_growth_rate'
+        ORDER BY keyword_id, collected_date DESC
      )
-     SELECT k.id, k.keyword, k.source, k.trend_id, k.mention_count,
+     SELECT k.id, k.keyword, k.source, k.trend_id,
+            k.mention_count, k.mention_window_days,
+            k.is_seasonal, k.yoy_growth_rate,
             li.value AS search_index,
             li.collected_date,
-            lg.value AS growth_rate,
-            -- 트렌드 신호: 언급 빈도와 증감률을 곱해 "요즘 화제이면서 검색도 늘고 있는 것"을 위로.
-            -- 검색지수(=이미 자리잡은 정도)는 일부러 빼둔다. 그걸 넣으면 스테디셀러가 상위를 차지한다.
+            lg.value  AS growth_rate,
+            lmg.value AS mention_growth_rate,
+            -- 트렌드 신호 = 언급 증가율(60점) + 검색 증가율(40점)
+            --
+            -- 언급 증가율에 더 무게를 두는 이유: 새로 뜨는 메뉴는 검색량보다
+            -- 블로그 게시가 먼저 늘어난다. 사람들이 검색하기 전에 글부터 올라온다.
+            --
+            -- 검색지수(=이미 자리잡은 정도)는 정렬에 쓰지 않는다.
+            -- 넣으면 에그타르트·밀크티 같은 스테디셀러가 상위를 차지한다.
             ROUND(
-              (LEAST(k.mention_count, 50) / 50.0) * 50
-              + (LEAST(GREATEST(COALESCE(lg.value, 0), -50), 50) + 50) / 100.0 * 50
+              (LEAST(GREATEST(COALESCE(lmg.value, 0), -100), 200) + 100) / 300.0 * 60
+              + (LEAST(GREATEST(COALESCE(lg.value, 0), -50), 50) + 50) / 100.0 * 40
             , 1) AS trend_signal
        FROM keywords k
        JOIN latest_index li ON li.keyword_id = k.id
        LEFT JOIN latest_growth lg ON lg.keyword_id = k.id
-      WHERE li.value >= $1
-        ${includeLinked ? '' : 'AND k.trend_id IS NULL'}
-        ${excludeStaples ? 'AND NOT (li.value >= $3 AND COALESCE(lg.value, 0) < $4)' : ''}
+       LEFT JOIN latest_mention_growth lmg ON lmg.keyword_id = k.id
+      WHERE ${conditions.join(' AND ')}
       ORDER BY trend_signal DESC, k.mention_count DESC
-      LIMIT $2`,
-    excludeStaples ? [minIndex, limit, stapleIndex, stapleGrowth] : [minIndex, limit]
+      LIMIT $${params.length}`,
+    params
   );
 
   res.json({
     keywords: rows,
-    filters: { minIndex, excludeStaples, stapleIndex, stapleGrowth, includeLinked },
+    filters: {
+      minIndex, minMentions, excludeStaples, stapleIndex, stapleGrowth,
+      excludeSeasonal, includeLinked,
+    },
     note:
-      'trend_signal 내림차순으로 정렬됩니다 — 언급 빈도(최근 글에 얼마나 자주 나오나)와 증감률(검색이 늘고 있나)을 합친 값입니다. ' +
-      '검색지수는 정렬에 쓰지 않습니다. 그걸 넣으면 이미 자리잡은 스테디셀러가 상위를 차지해 트렌드 발굴이 되지 않기 때문입니다. ' +
-      `기본적으로 검색지수 ${stapleIndex} 이상이면서 증감률 ${stapleGrowth}% 미만인 상시 메뉴는 제외합니다(excludeStaples=false로 해제 가능). ` +
-      'growth_rate는 네이버 검색지수의 최근 7일 평균 대 이전 7일 평균 증감률(%)이며, null이면 시계열이 14일치가 안 된다는 뜻입니다.',
+      'trend_signal 내림차순 정렬 = 언급 증가율(60점) + 검색 증가율(40점). ' +
+      '언급 증가율은 네이버 블로그 게시 속도의 변화(최근 7일 대 그 이전 7일)로, 새 메뉴는 검색량보다 글이 먼저 늘기 때문에 더 큰 가중치를 둡니다. ' +
+      '검색지수는 정렬에 쓰지 않습니다 — 넣으면 이미 자리잡은 스테디셀러가 상위를 차지해 발굴이 되지 않습니다. ' +
+      `제외 조건: 검색지수 ${stapleIndex} 이상이면서 검색 증감률 ${stapleGrowth}% 미만(상시 메뉴), 언급 ${minMentions}회 미만(대부분 가게 이름), ` +
+      'is_seasonal=true(작년 같은 달에도 비슷하게 높았던 계절 메뉴 — 7월의 팥빙수처럼 트렌드가 아니라 매년 반복되는 것). ' +
+      'yoy_growth_rate는 작년 같은 달 대비 증감률로, 값이 클수록 올해 새로 뜨는 것입니다. ' +
+      'mention_window_days가 14 미만이면 확보한 기간이 짧아 언급 증가율의 신뢰도가 낮습니다.',
   });
 }
 

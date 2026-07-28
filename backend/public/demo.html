@@ -246,6 +246,13 @@
             <option value="false">포함</option>
           </select>
         </div>
+        <div>
+          <label>계절 메뉴 제외</label>
+          <select id="rExcludeSeasonal">
+            <option value="true">제외 (작년 같은 달에도 높았던 것)</option>
+            <option value="false">포함</option>
+          </select>
+        </div>
       </div>
       <button class="go" onclick="loadRising()">조회</button>
       <div id="risingList"></div>
@@ -505,6 +512,7 @@ async function loadRising() {
     minIndex: document.getElementById('rMinIndex').value || '1',
     limit: document.getElementById('rLimit').value || '30',
     excludeStaples: document.getElementById('rExcludeStaples').value,
+    excludeSeasonal: document.getElementById('rExcludeSeasonal').value,
   });
   const list = document.getElementById('risingList');
   list.innerHTML = '';
@@ -518,21 +526,26 @@ async function loadRising() {
     const rows = keywords.map((k) => `
       <tr>
         <td style="padding:6px 10px;font-weight:600;text-align:right">${k.trend_signal ?? '-'}</td>
-        <td style="padding:6px 10px">${escapeHtml(k.keyword)}</td>
-        <td style="padding:6px 10px;text-align:right">${k.mention_count ?? 0}회</td>
+        <td style="padding:6px 10px">
+          ${escapeHtml(k.keyword)}
+          ${k.is_seasonal ? '<span class="badge gray" style="margin-left:6px">계절</span>' : ''}
+        </td>
+        <td style="padding:6px 10px;text-align:right">${k.mention_growth_rate != null ? fmtPct(k.mention_growth_rate) : '—'}</td>
         <td style="padding:6px 10px;text-align:right">${k.growth_rate != null ? fmtPct(k.growth_rate) : '—'}</td>
+        <td style="padding:6px 10px;text-align:right">${k.yoy_growth_rate != null ? fmtPct(k.yoy_growth_rate) : '—'}</td>
+        <td style="padding:6px 10px;text-align:right;color:var(--muted)">${k.mention_count ?? 0}건</td>
         <td style="padding:6px 10px;text-align:right;color:var(--muted)">${k.search_index ?? '-'}</td>
-        <td style="padding:6px 10px;color:var(--muted)">${escapeHtml(k.source)}</td>
       </tr>`).join('');
     list.innerHTML = `
       <table style="width:100%;border-collapse:collapse;margin-top:12px;font-size:13px">
         <thead><tr style="border-bottom:1px solid var(--border);color:var(--muted);font-size:12px">
           <th style="text-align:right;padding:6px 10px">신호</th>
           <th style="text-align:left;padding:6px 10px">키워드</th>
-          <th style="text-align:right;padding:6px 10px">언급</th>
-          <th style="text-align:right;padding:6px 10px">증감률</th>
+          <th style="text-align:right;padding:6px 10px">언급 증가</th>
+          <th style="text-align:right;padding:6px 10px">검색 증가</th>
+          <th style="text-align:right;padding:6px 10px">전년 대비</th>
+          <th style="text-align:right;padding:6px 10px">최근 글</th>
           <th style="text-align:right;padding:6px 10px">검색지수</th>
-          <th style="text-align:left;padding:6px 10px">출처</th>
         </tr></thead>
         <tbody>${rows}</tbody>
       </table>

@@ -93,7 +93,13 @@ CREATE TABLE keywords (
     -- 발굴 시 최근 글 제목에서 몇 번 언급됐는지.
     -- "최근 글에 자주 나오는데 검색량은 아직 낮다"가 태동기의 신호라서,
     -- 검색지수만으로는 스테디셀러와 신흥 트렌드를 구분할 수 없다.
-    mention_count     INTEGER NOT NULL DEFAULT 0,
+    mention_count       INTEGER NOT NULL DEFAULT 0,
+    -- 언급 추이 측정 시 확보한 기간(일). 14 미만이면 증가율 신뢰도가 낮다
+    mention_window_days INTEGER,
+    -- 계절성 반복 여부. 7월의 팥빙수처럼 매년 이맘때 오르는 것은 트렌드가 아니다.
+    -- 작년 같은 달과 비교해 판별한다 (데이터랩 timeUnit=month, 24개월)
+    is_seasonal         BOOLEAN NOT NULL DEFAULT false,
+    yoy_growth_rate     NUMERIC(10,2),
     discovered_at     TIMESTAMPTZ,
     last_collected_at TIMESTAMPTZ,
     created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
