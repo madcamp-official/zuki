@@ -82,14 +82,26 @@ CREATE INDEX idx_trends_published_created ON trends(is_published, created_at DES
 -- 4. keywords : 트렌드 후보/연결 키워드
 -- 후보 발굴 단계에서는 trend_id가 비어 있을 수 있음 (아직 카드로 승격 전)
 -- ---------------------------------------------------------------------
+-- trend_id가 NULL이면 아직 카드로 승격되지 않은 "후보 키워드".
+-- 후보는 네이버 검색량만 감시하고(저렴), 카드로 승격된 것만 유튜브까지 수집한다.
 CREATE TABLE keywords (
-    id          BIGSERIAL PRIMARY KEY,
-    trend_id    BIGINT REFERENCES trends(id) ON DELETE SET NULL,
-    keyword     VARCHAR(50) NOT NULL UNIQUE,
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+    id                BIGSERIAL PRIMARY KEY,
+    trend_id          BIGINT REFERENCES trends(id) ON DELETE SET NULL,
+    keyword           VARCHAR(50) NOT NULL UNIQUE,
+    -- 어디서 발굴됐는지: 'editor'(직접 등록) | 'youtube'(인기영상 제목) | 'naver'(블로그·카페글)
+    source            VARCHAR(20) NOT NULL DEFAULT 'editor',
+    -- 발굴 시 최근 글 제목에서 몇 번 언급됐는지.
+    -- "최근 글에 자주 나오는데 검색량은 아직 낮다"가 태동기의 신호라서,
+    -- 검색지수만으로는 스테디셀러와 신흥 트렌드를 구분할 수 없다.
+    mention_count     INTEGER NOT NULL DEFAULT 0,
+    discovered_at     TIMESTAMPTZ,
+    last_collected_at TIMESTAMPTZ,
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE INDEX idx_keywords_trend ON keywords(trend_id);
+CREATE INDEX idx_keywords_candidates ON keywords(source) WHERE trend_id IS NULL;
+CREATE INDEX idx_keywords_mention ON keywords(mention_count DESC) WHERE trend_id IS NULL;
 
 -- ---------------------------------------------------------------------
 -- 5. keyword_metrics : 네이버/유튜브 API 원시 수집 데이터 (일별)

@@ -20,8 +20,17 @@ export interface NaverTrendResult {
 }
 
 /**
+ * 한 번의 API 호출로 조회 가능한 키워드 수.
+ *
+ * 네이버 제한은 "최대 5개 주제어 그룹, 그룹당 최대 20개 검색어"인데,
+ * 우리는 키워드별로 개별 지수가 필요해서 키워드 1개 = 그룹 1개로 매핑한다.
+ * 따라서 실제 상한은 20이 아니라 5다. (이전 코드의 20 체크는 잘못된 값이었음)
+ */
+export const NAVER_MAX_KEYWORDS_PER_CALL = 5;
+
+/**
  * 후보 키워드들의 최근 N개월 검색어트렌드 지수를 조회한다.
- * TODO(Day2-3): 실제 응답 파싱 로직은 네이버 API 키 발급 후 응답 예시 보고 확정
+ * 한 번에 최대 5개까지. 그 이상은 fetchNaverTrendsBatched를 쓸 것.
  */
 export async function fetchNaverTrends(
   keywords: string[],
@@ -34,8 +43,11 @@ export async function fetchNaverTrends(
     throw new Error('NAVER_CLIENT_ID / NAVER_CLIENT_SECRET이 설정되지 않았습니다.');
   }
   if (keywords.length === 0) return [];
-  if (keywords.length > 20) {
-    throw new Error('네이버 데이터랩은 그룹당 최대 20개 검색어까지만 지원합니다.');
+  if (keywords.length > NAVER_MAX_KEYWORDS_PER_CALL) {
+    throw new Error(
+      `네이버 데이터랩은 한 번에 최대 ${NAVER_MAX_KEYWORDS_PER_CALL}개 그룹까지만 지원합니다. ` +
+        `(요청: ${keywords.length}개) fetchNaverTrendsBatched를 사용하세요.`
+    );
   }
 
   const endDate = new Date();
@@ -72,4 +84,35 @@ export async function fetchNaverTrends(
     keyword: r.title,
     points: r.data.map((d) => ({ period: d.period, ratio: d.ratio })),
   }));
+}
+
+/**
+ * 키워드를 5개씩 묶어 여러 번 호출한다.
+ *
+ * 네이버 데이터랩은 하루 1,000회 호출 제한이 있고 호출당 5개까지 담을 수 있어서,
+ * 이론상 하루 5,000개 키워드까지 감시 가능하다. (유튜브는 키워드당 101 unit이라
+ * 하루 ~99개가 한계 — 그래서 후보 키워드 폭넓은 감시는 네이버만으로 한다)
+ *
+ * 일부 묶음이 실패해도 나머지는 살리기 위해 묶음 단위로 에러를 잡는다.
+ */
+export async function fetchNaverTrendsBatched(
+  keywords: string[],
+  months = 3
+): Promise<{ results: NaverTrendResult[]; failed: { keywords: string[]; message: string }[] }> {
+  const results: NaverTrendResult[] = [];
+  const failed: { keywords: string[]; message: string }[] = [];
+
+  for (let i = 0; i < keywords.length; i += NAVER_MAX_KEYWORDS_PER_CALL) {
+    const chunk = keywords.slice(i, i + NAVER_MAX_KEYWORDS_PER_CALL);
+    try {
+      results.push(...(await fetchNaverTrends(chunk, months)));
+    } catch (err) {
+      failed.push({
+        keywords: chunk,
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  return { results, failed };
 }

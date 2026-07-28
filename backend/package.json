@@ -4,6 +4,9 @@
   "private": true,
   "description": "TrendPick(트렌드픽) 백엔드 API 서버",
   "main": "dist/app.js",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/app.ts",
     "build": "tsc",

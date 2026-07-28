@@ -3,12 +3,69 @@ import { query } from '../db/client';
 import { ApiError } from '../middlewares/errorHandler';
 
 /**
+ * 트렌드별 수집 지표를 뽑는 공통 CTE.
+ *
+ * 증감률은 여기서 계산하지 않고, 수집 배치가 저장해둔 값을 그대로 읽는다.
+ * 네이버가 3개월 시계열을 통째로 주기 때문에 증감률은 첫 수집에서 이미
+ * 계산 가능하다. DB에 쌓인 날짜별 값끼리 다시 비교하는 방식이면 이틀치가
+ * 쌓일 때까지 값을 보여줄 수 없어서, 계산 시점의 값을 저장하는 쪽을 택했다.
+ *
+ * metric_type 별 의미:
+ *   naver/search_index         최근 7일 평균 검색지수 (0~100)
+ *   naver/search_growth_rate   최근 7일 평균 대 이전 7일 평균 증감률 (%)
+ *   youtube/video_count        키워드 검색 결과 영상 수
+ *   youtube/view_count         조회수 상위 영상 10개의 조회수 합
+ *   youtube/mention_growth_rate 영상 수 증감률 (%)
+ */
+const METRICS_CTE = `
+  WITH latest AS (
+    SELECT DISTINCT ON (k.trend_id, km.source_type, km.metric_type)
+           k.trend_id, km.source_type, km.metric_type, km.value
+      FROM keywords k
+      JOIN keyword_metrics km ON km.keyword_id = k.id
+     WHERE k.trend_id IS NOT NULL
+     ORDER BY k.trend_id, km.source_type, km.metric_type, km.collected_date DESC
+  ),
+  metrics AS (
+    SELECT trend_id,
+           MAX(value) FILTER (WHERE source_type = 'naver'   AND metric_type = 'search_index')        AS search_index,
+           MAX(value) FILTER (WHERE source_type = 'naver'   AND metric_type = 'search_growth_rate')  AS search_growth_rate,
+           MAX(value) FILTER (WHERE source_type = 'youtube' AND metric_type = 'video_count')         AS yt_video_count,
+           MAX(value) FILTER (WHERE source_type = 'youtube' AND metric_type = 'view_count')          AS yt_view_count,
+           MAX(value) FILTER (WHERE source_type = 'youtube' AND metric_type = 'mention_growth_rate') AS mention_growth_rate
+      FROM latest
+     GROUP BY trend_id
+  )
+`;
+
+const METRIC_COLUMNS = `
+  mt.search_growth_rate,
+  mt.mention_growth_rate,
+  mt.search_index,
+  mt.yt_video_count AS youtube_video_count,
+  mt.yt_view_count  AS youtube_view_count
+`;
+
+/**
  * GET /api/trends
  * 홈 브리핑 / 카테고리 탐색 (기획서 4-1, 4-3)
- * 쿼리 파라미터: category(slug), status, limit
+ *
+ * 쿼리 파라미터:
+ *   category — 카테고리 slug
+ *   status   — emerging | rising | peak | declining
+ *   limit    — 기본 20, 최대 100
+ *   sort     — latest(기본, 최신순) | score(점수 높은 순)
+ *
+ * sort는 화이트리스트로만 받는다. 사용자 입력을 ORDER BY에 그대로 넣으면
+ * SQL 인젝션이 되기 때문에, 미리 정의한 문자열로만 치환한다.
  */
+const SORT_OPTIONS: Record<string, string> = {
+  latest: 't.created_at DESC',
+  score: 't.score DESC NULLS LAST, t.created_at DESC',
+};
+
 export async function listTrends(req: Request, res: Response) {
-  const { category, status, limit } = req.query;
+  const { category, status, limit, sort } = req.query;
 
   const conditions: string[] = ['t.is_published = true'];
   const params: unknown[] = [];
@@ -22,17 +79,33 @@ export async function listTrends(req: Request, res: Response) {
     conditions.push(`t.status = $${params.length}`);
   }
 
+  const orderBy = SORT_OPTIONS[String(sort)] ?? SORT_OPTIONS.latest;
+
   const limitNum = Math.min(Number(limit) || 20, 100);
   params.push(limitNum);
 
   const rows = await query(
-    `SELECT t.id, t.title, t.summary, t.status, t.score, t.image_url,
+    `${METRICS_CTE}
+     SELECT t.id, t.title, t.summary, t.status, t.score, t.image_url,
             t.region_scope, t.created_at,
-            c.name AS category_name, c.slug AS category_slug
+            c.name AS category_name, c.slug AS category_slug,
+            ${METRIC_COLUMNS},
+            sh.score_history
        FROM trends t
        JOIN categories c ON c.id = t.category_id
+       LEFT JOIN metrics mt ON mt.trend_id = t.id
+       LEFT JOIN LATERAL (
+         SELECT COALESCE(json_agg(x ORDER BY x.recorded_date), '[]'::json) AS score_history
+           FROM (
+             SELECT score, status, recorded_date
+               FROM trend_score_history
+              WHERE trend_id = t.id
+              ORDER BY recorded_date DESC
+              LIMIT 14
+           ) x
+       ) sh ON true
       WHERE ${conditions.join(' AND ')}
-      ORDER BY t.created_at DESC
+      ORDER BY ${orderBy}
       LIMIT $${params.length}`,
     params
   );
@@ -48,11 +121,14 @@ export async function getTrendDetail(req: Request, res: Response) {
   const { id } = req.params;
 
   const [trend] = await query(
-    `SELECT t.id, t.title, t.summary, t.reason, t.status, t.score,
+    `${METRICS_CTE}
+     SELECT t.id, t.title, t.summary, t.reason, t.status, t.score,
             t.image_url, t.region_scope, t.created_at,
-            c.name AS category_name, c.slug AS category_slug
+            c.name AS category_name, c.slug AS category_slug,
+            ${METRIC_COLUMNS}
        FROM trends t
        JOIN categories c ON c.id = t.category_id
+       LEFT JOIN metrics mt ON mt.trend_id = t.id
       WHERE t.id = $1 AND t.is_published = true`,
     [id]
   );
@@ -69,7 +145,21 @@ export async function getTrendDetail(req: Request, res: Response) {
     [id]
   );
 
-  res.json({ trend, scoreHistory: history });
+  // 프론트 "검색량 추이" 그래프용 — 네이버 검색지수 원본 시계열.
+  // scoreHistory(점수 이력)와는 다른 값이다. 화면 라벨이 "네이버 데이터랩 기준
+  // 상대 검색지수(0~100)"이므로 이 배열을 써야 맞다.
+  const searchIndexHistory = await query(
+    `SELECT km.collected_date AS recorded_date, km.value AS search_index
+       FROM keywords k
+       JOIN keyword_metrics km ON km.keyword_id = k.id
+      WHERE k.trend_id = $1
+        AND km.source_type = 'naver'
+        AND km.metric_type = 'search_index'
+      ORDER BY km.collected_date ASC`,
+    [id]
+  );
+
+  res.json({ trend, scoreHistory: history, searchIndexHistory });
 }
 
 /**

@@ -2,7 +2,14 @@ import { Request, Response } from 'express';
 import { query } from '../db/client';
 import { ApiError } from '../middlewares/errorHandler';
 import { runDailyCollect } from '../jobs/dailyCollect';
+import {
+  DiscoveredKeyword,
+  DiscoveryResult,
+  discoverFromNaver,
+  discoverFromYoutube,
+} from '../services/keywordDiscovery';
 import { generateTrendImage } from '../services/imageGeneration';
+
 
 /**
  * POST /api/admin/trends
@@ -110,20 +117,188 @@ export async function createKeyword(req: Request, res: Response) {
 /**
  * GET /api/admin/keywords
  * 등록된 키워드 목록 확인용 (테스트/운영 확인용)
+ * 쿼리: candidate=true 면 아직 카드로 승격 안 된 후보 키워드만
  */
-export async function listKeywords(_req: Request, res: Response) {
+export async function listKeywords(req: Request, res: Response) {
+  const onlyCandidates = req.query.candidate === 'true';
   const rows = await query(
-    `SELECT id, keyword, trend_id, created_at FROM keywords ORDER BY created_at DESC`
+    `SELECT id, keyword, trend_id, source, last_collected_at, created_at
+       FROM keywords
+      ${onlyCandidates ? 'WHERE trend_id IS NULL' : ''}
+      ORDER BY created_at DESC
+      LIMIT 500`
   );
   res.json({ keywords: rows });
 }
 
 /**
- * POST /api/admin/collect
- * jobs/dailyCollect.ts의 배치를 크론 스케줄 기다리지 않고 즉시 실행 (테스트/운영 확인용)
- * 실제 운영에서는 node-cron이 매일 새벽 3시에 자동으로 호출함 (기획서 11-4 ④)
+ * POST /api/admin/keywords/discover
+ * 후보 키워드를 발굴해 DB에 적재한다 (기획서 "트렌드 예측"의 재료 수집 단계).
+ *
+ * body: { youtube?: boolean, naver?: boolean }
+ *   youtube — 유튜브 인기 급상승 영상 제목에서 추출 (기본 true, 4 unit 소모)
+ *   naver   — 네이버 블로그·카페글 최신 포스트 제목에서 추출 (기본 true, 10회 호출)
+ *
+ * 둘 다 "지금 실제로 올라오고 있는 콘텐츠"에서 가져온다.
+ * 여기서는 "후보를 쌓기만" 한다. 실제 검색량은 다음 수집 배치가 채우고,
+ * 그 결과는 GET /api/admin/keywords/rising 으로 확인한다.
  */
-export async function triggerCollect(_req: Request, res: Response) {
+export async function discoverKeywords(req: Request, res: Response) {
+  const useYoutube = req.body?.youtube !== false;
+  const useNaver = req.body?.naver !== false;
+
+  const discovered: DiscoveredKeyword[] = [];
+  const errors: string[] = [];
+  const sources: Record<string, unknown> = {};
+
+  /** 소스 하나를 실행하고 실패를 응답에 담는다 (조용히 넘어가지 않도록) */
+  async function run(name: string, fn: () => Promise<DiscoveryResult>) {
+    try {
+      const result = await fn();
+      discovered.push(...result.keywords);
+      sources[name] = {
+        titlesScanned: result.titlesScanned,
+        extracted: result.keywords.length,
+        attempts: result.attempts,
+      };
+      for (const a of result.attempts.filter((x) => !x.ok)) {
+        errors.push(`${a.target} 조회 실패: ${a.error}`);
+      }
+      if (result.titlesScanned === 0) {
+        errors.push(`${name}에서 제목을 하나도 가져오지 못했습니다. API 키/할당량을 확인하세요.`);
+      }
+    } catch (err) {
+      errors.push(`${name} 발굴 실패: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  if (useYoutube) await run('youtube', () => discoverFromYoutube());
+  if (useNaver) await run('naver', () => discoverFromNaver());
+
+  // 중복 제거 (먼저 나온 소스를 우선)
+  const unique = new Map<string, DiscoveredKeyword>();
+  for (const d of discovered) {
+    if (!unique.has(d.keyword)) unique.set(d.keyword, d);
+  }
+
+  let inserted = 0;
+  let skipped = 0;
+
+  for (const d of unique.values()) {
+    // keyword는 VARCHAR(50) UNIQUE.
+    // 이미 있으면 mention_count만 갱신한다 — 매번 새 언급 빈도를 반영해야
+    // "지금 화제인지"를 판단할 수 있기 때문. source/trend_id는 건드리지 않는다
+    // (에디터가 카드에 연결해둔 키워드를 덮어쓰면 안 되므로).
+    const rows = await query<{ id: number; inserted: boolean }>(
+      `INSERT INTO keywords (keyword, source, mention_count, discovered_at)
+       VALUES ($1, $2, $3, now())
+       ON CONFLICT (keyword) DO UPDATE
+         SET mention_count = EXCLUDED.mention_count,
+             discovered_at = now()
+       RETURNING id, (xmax = 0) AS inserted`,
+      [d.keyword.slice(0, 50), d.source, d.mentionCount]
+    );
+    if (rows[0]?.inserted) inserted += 1;
+    else skipped += 1;
+  }
+
+  res.json({
+    discovered: unique.size,
+    inserted,
+    skipped,
+    errors,
+    sources,
+    message:
+      inserted > 0
+        ? `후보 키워드 ${inserted}개를 등록했습니다. 다음 수집 배치가 검색량을 채운 뒤 /api/admin/keywords/rising 에서 확인하세요.`
+        : '새로 등록된 키워드가 없습니다 (이미 전부 등록됨).',
+  });
+}
+
+/**
+ * GET /api/admin/keywords/rising
+ * 급상승 중인 후보 키워드 목록 — "무엇을 트렌드 카드로 만들지" 고르는 화면용.
+ *
+ * 최신 검색지수와 7일 이내 기준값을 비교해 증감률 순으로 정렬한다.
+ * 검색량 자체가 미미한 키워드(조합 생성물 대부분)는 minIndex로 걸러낸다.
+ *
+ * 쿼리: limit(기본 30), minIndex(기본 1), includeLinked(기본 false)
+ */
+export async function listRisingKeywords(req: Request, res: Response) {
+  const limit = Math.min(Number(req.query.limit) || 30, 200);
+  const minIndex = Number(req.query.minIndex ?? 1);
+  const includeLinked = req.query.includeLinked === 'true';
+  /** 스테디셀러 제외: 검색지수가 이 값 이상인데 증감률이 미미하면 유행이 아니라 상시 메뉴 */
+  const excludeStaples = req.query.excludeStaples !== 'false';
+  const stapleIndex = Number(req.query.stapleIndex ?? 40);
+  const stapleGrowth = Number(req.query.stapleGrowth ?? 5);
+
+  // 증감률은 수집 시점에 네이버 3개월 시계열로 계산해 저장해둔 값을 그대로 읽는다.
+  // (DB에 쌓인 날짜별 값끼리 다시 비교하면 이틀치가 쌓일 때까지 값이 안 나온다)
+  const rows = await query(
+    `WITH latest_index AS (
+       SELECT DISTINCT ON (keyword_id) keyword_id, value, collected_date
+         FROM keyword_metrics
+        WHERE source_type = 'naver' AND metric_type = 'search_index'
+        ORDER BY keyword_id, collected_date DESC
+     ),
+     latest_growth AS (
+       SELECT DISTINCT ON (keyword_id) keyword_id, value
+         FROM keyword_metrics
+        WHERE source_type = 'naver' AND metric_type = 'search_growth_rate'
+        ORDER BY keyword_id, collected_date DESC
+     )
+     SELECT k.id, k.keyword, k.source, k.trend_id, k.mention_count,
+            li.value AS search_index,
+            li.collected_date,
+            lg.value AS growth_rate,
+            -- 트렌드 신호: 언급 빈도와 증감률을 곱해 "요즘 화제이면서 검색도 늘고 있는 것"을 위로.
+            -- 검색지수(=이미 자리잡은 정도)는 일부러 빼둔다. 그걸 넣으면 스테디셀러가 상위를 차지한다.
+            ROUND(
+              (LEAST(k.mention_count, 50) / 50.0) * 50
+              + (LEAST(GREATEST(COALESCE(lg.value, 0), -50), 50) + 50) / 100.0 * 50
+            , 1) AS trend_signal
+       FROM keywords k
+       JOIN latest_index li ON li.keyword_id = k.id
+       LEFT JOIN latest_growth lg ON lg.keyword_id = k.id
+      WHERE li.value >= $1
+        ${includeLinked ? '' : 'AND k.trend_id IS NULL'}
+        ${excludeStaples ? 'AND NOT (li.value >= $3 AND COALESCE(lg.value, 0) < $4)' : ''}
+      ORDER BY trend_signal DESC, k.mention_count DESC
+      LIMIT $2`,
+    excludeStaples ? [minIndex, limit, stapleIndex, stapleGrowth] : [minIndex, limit]
+  );
+
+  res.json({
+    keywords: rows,
+    filters: { minIndex, excludeStaples, stapleIndex, stapleGrowth, includeLinked },
+    note:
+      'trend_signal 내림차순으로 정렬됩니다 — 언급 빈도(최근 글에 얼마나 자주 나오나)와 증감률(검색이 늘고 있나)을 합친 값입니다. ' +
+      '검색지수는 정렬에 쓰지 않습니다. 그걸 넣으면 이미 자리잡은 스테디셀러가 상위를 차지해 트렌드 발굴이 되지 않기 때문입니다. ' +
+      `기본적으로 검색지수 ${stapleIndex} 이상이면서 증감률 ${stapleGrowth}% 미만인 상시 메뉴는 제외합니다(excludeStaples=false로 해제 가능). ` +
+      'growth_rate는 네이버 검색지수의 최근 7일 평균 대 이전 7일 평균 증감률(%)이며, null이면 시계열이 14일치가 안 된다는 뜻입니다.',
+  });
+}
+
+/**
+ * POST /api/admin/collect
+ * jobs/dailyCollect.ts의 배치를 크론 스케줄 기다리지 않고 즉시 실행.
+ *
+ * 두 가지 용도로 쓰인다:
+ *  1) 개발/시연 중 수동 실행 (데모 페이지 버튼)
+ *  2) 외부 스케줄러(cron-job.org 등)가 매일 1회 호출 → 잠든 인스턴스를 깨우면서 수집까지 수행
+ *     (Render 무료 플랜은 15분 미사용 시 슬립되어 node-cron이 뜨지 않기 때문)
+ *
+ * 이 API는 호출할 때마다 네이버·유튜브 할당량을 실제로 소모하므로,
+ * COLLECT_SECRET이 설정돼 있으면 x-collect-secret 헤더가 일치해야만 실행한다.
+ * 미설정 시에는 기존처럼 그냥 열려 있다(로컬 개발 편의 + 하위 호환).
+ */
+export async function triggerCollect(req: Request, res: Response) {
+  const secret = process.env.COLLECT_SECRET;
+  if (secret && req.header('x-collect-secret') !== secret) {
+    throw new ApiError(401, '수집 실행 권한이 없습니다.');
+  }
+
   const summary = await runDailyCollect();
   res.json({ summary });
 }
