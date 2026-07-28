@@ -239,6 +239,13 @@
       <div class="row">
         <div><label>최소 검색지수</label><input id="rMinIndex" type="number" value="1" min="0" /></div>
         <div><label>개수</label><input id="rLimit" type="number" value="30" min="1" max="200" /></div>
+        <div>
+          <label>상시 메뉴 제외</label>
+          <select id="rExcludeStaples">
+            <option value="true">제외 (검색지수 40+ & 증감 5% 미만)</option>
+            <option value="false">포함</option>
+          </select>
+        </div>
       </div>
       <button class="go" onclick="loadRising()">조회</button>
       <div id="risingList"></div>
@@ -497,6 +504,7 @@ async function loadRising() {
   const params = new URLSearchParams({
     minIndex: document.getElementById('rMinIndex').value || '1',
     limit: document.getElementById('rLimit').value || '30',
+    excludeStaples: document.getElementById('rExcludeStaples').value,
   });
   const list = document.getElementById('risingList');
   list.innerHTML = '';
@@ -509,20 +517,22 @@ async function loadRising() {
     }
     const rows = keywords.map((k) => `
       <tr>
+        <td style="padding:6px 10px;font-weight:600;text-align:right">${k.trend_signal ?? '-'}</td>
         <td style="padding:6px 10px">${escapeHtml(k.keyword)}</td>
-        <td style="padding:6px 10px;color:var(--muted)">${escapeHtml(k.source)}</td>
-        <td style="padding:6px 10px;text-align:right">${k.search_index ?? '-'}</td>
+        <td style="padding:6px 10px;text-align:right">${k.mention_count ?? 0}회</td>
         <td style="padding:6px 10px;text-align:right">${k.growth_rate != null ? fmtPct(k.growth_rate) : '—'}</td>
-        <td style="padding:6px 10px;color:var(--muted)">${k.trend_id ? '카드 있음' : '후보'}</td>
+        <td style="padding:6px 10px;text-align:right;color:var(--muted)">${k.search_index ?? '-'}</td>
+        <td style="padding:6px 10px;color:var(--muted)">${escapeHtml(k.source)}</td>
       </tr>`).join('');
     list.innerHTML = `
       <table style="width:100%;border-collapse:collapse;margin-top:12px;font-size:13px">
         <thead><tr style="border-bottom:1px solid var(--border);color:var(--muted);font-size:12px">
+          <th style="text-align:right;padding:6px 10px">신호</th>
           <th style="text-align:left;padding:6px 10px">키워드</th>
-          <th style="text-align:left;padding:6px 10px">출처</th>
-          <th style="text-align:right;padding:6px 10px">검색지수</th>
+          <th style="text-align:right;padding:6px 10px">언급</th>
           <th style="text-align:right;padding:6px 10px">증감률</th>
-          <th style="text-align:left;padding:6px 10px">상태</th>
+          <th style="text-align:right;padding:6px 10px">검색지수</th>
+          <th style="text-align:left;padding:6px 10px">출처</th>
         </tr></thead>
         <tbody>${rows}</tbody>
       </table>

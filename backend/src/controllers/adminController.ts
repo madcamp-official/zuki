@@ -146,15 +146,20 @@ export async function discoverKeywords(req: Request, res: Response) {
   let skipped = 0;
 
   for (const d of unique.values()) {
-    // keyword는 VARCHAR(50) UNIQUE. 이미 있으면 건드리지 않는다
-    // (에디터가 카드에 연결해둔 키워드의 source/trend_id를 덮어쓰면 안 되므로)
-    const rows = await query<{ id: number }>(
-      `INSERT INTO keywords (keyword, source) VALUES ($1, $2)
-       ON CONFLICT (keyword) DO NOTHING
-       RETURNING id`,
-      [d.keyword.slice(0, 50), d.source]
+    // keyword는 VARCHAR(50) UNIQUE.
+    // 이미 있으면 mention_count만 갱신한다 — 매번 새 언급 빈도를 반영해야
+    // "지금 화제인지"를 판단할 수 있기 때문. source/trend_id는 건드리지 않는다
+    // (에디터가 카드에 연결해둔 키워드를 덮어쓰면 안 되므로).
+    const rows = await query<{ id: number; inserted: boolean }>(
+      `INSERT INTO keywords (keyword, source, mention_count, discovered_at)
+       VALUES ($1, $2, $3, now())
+       ON CONFLICT (keyword) DO UPDATE
+         SET mention_count = EXCLUDED.mention_count,
+             discovered_at = now()
+       RETURNING id, (xmax = 0) AS inserted`,
+      [d.keyword.slice(0, 50), d.source, d.mentionCount]
     );
-    if (rows.length > 0) inserted += 1;
+    if (rows[0]?.inserted) inserted += 1;
     else skipped += 1;
   }
 
@@ -184,6 +189,10 @@ export async function listRisingKeywords(req: Request, res: Response) {
   const limit = Math.min(Number(req.query.limit) || 30, 200);
   const minIndex = Number(req.query.minIndex ?? 1);
   const includeLinked = req.query.includeLinked === 'true';
+  /** 스테디셀러 제외: 검색지수가 이 값 이상인데 증감률이 미미하면 유행이 아니라 상시 메뉴 */
+  const excludeStaples = req.query.excludeStaples !== 'false';
+  const stapleIndex = Number(req.query.stapleIndex ?? 40);
+  const stapleGrowth = Number(req.query.stapleGrowth ?? 5);
 
   // 증감률은 수집 시점에 네이버 3개월 시계열로 계산해 저장해둔 값을 그대로 읽는다.
   // (DB에 쌓인 날짜별 값끼리 다시 비교하면 이틀치가 쌓일 때까지 값이 안 나온다)
@@ -200,24 +209,35 @@ export async function listRisingKeywords(req: Request, res: Response) {
         WHERE source_type = 'naver' AND metric_type = 'search_growth_rate'
         ORDER BY keyword_id, collected_date DESC
      )
-     SELECT k.id, k.keyword, k.source, k.trend_id,
+     SELECT k.id, k.keyword, k.source, k.trend_id, k.mention_count,
             li.value AS search_index,
             li.collected_date,
-            lg.value AS growth_rate
+            lg.value AS growth_rate,
+            -- 트렌드 신호: 언급 빈도와 증감률을 곱해 "요즘 화제이면서 검색도 늘고 있는 것"을 위로.
+            -- 검색지수(=이미 자리잡은 정도)는 일부러 빼둔다. 그걸 넣으면 스테디셀러가 상위를 차지한다.
+            ROUND(
+              (LEAST(k.mention_count, 50) / 50.0) * 50
+              + (LEAST(GREATEST(COALESCE(lg.value, 0), -50), 50) + 50) / 100.0 * 50
+            , 1) AS trend_signal
        FROM keywords k
        JOIN latest_index li ON li.keyword_id = k.id
        LEFT JOIN latest_growth lg ON lg.keyword_id = k.id
       WHERE li.value >= $1
         ${includeLinked ? '' : 'AND k.trend_id IS NULL'}
-      ORDER BY lg.value DESC NULLS LAST, li.value DESC
+        ${excludeStaples ? 'AND NOT (li.value >= $3 AND COALESCE(lg.value, 0) < $4)' : ''}
+      ORDER BY trend_signal DESC, k.mention_count DESC
       LIMIT $2`,
-    [minIndex, limit]
+    excludeStaples ? [minIndex, limit, stapleIndex, stapleGrowth] : [minIndex, limit]
   );
 
   res.json({
     keywords: rows,
+    filters: { minIndex, excludeStaples, stapleIndex, stapleGrowth, includeLinked },
     note:
-      'growth_rate는 네이버 검색지수의 최근 7일 평균 대 그 이전 7일 평균 증감률(%)입니다. null이면 해당 키워드의 시계열이 14일치가 안 된다는 뜻입니다. 카드로 만들 키워드를 고른 뒤 POST /api/admin/trends로 카드를 만들고 POST /api/admin/keywords로 연결하세요.',
+      'trend_signal 내림차순으로 정렬됩니다 — 언급 빈도(최근 글에 얼마나 자주 나오나)와 증감률(검색이 늘고 있나)을 합친 값입니다. ' +
+      '검색지수는 정렬에 쓰지 않습니다. 그걸 넣으면 이미 자리잡은 스테디셀러가 상위를 차지해 트렌드 발굴이 되지 않기 때문입니다. ' +
+      `기본적으로 검색지수 ${stapleIndex} 이상이면서 증감률 ${stapleGrowth}% 미만인 상시 메뉴는 제외합니다(excludeStaples=false로 해제 가능). ` +
+      'growth_rate는 네이버 검색지수의 최근 7일 평균 대 이전 7일 평균 증감률(%)이며, null이면 시계열이 14일치가 안 된다는 뜻입니다.',
   });
 }
 

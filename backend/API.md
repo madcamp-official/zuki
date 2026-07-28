@@ -285,21 +285,42 @@
 
 ### GET /api/admin/keywords/rising
 
-급상승 중인 후보 키워드 — "무엇을 트렌드 카드로 만들지" 고르는 용도.
+트렌드 신호가 강한 후보 키워드 — "무엇을 트렌드 카드로 만들지" 고르는 용도.
 
-쿼리: `limit`(기본 30, 최대 200), `minIndex`(기본 1), `includeLinked`(기본 false)
+쿼리:
+
+| 파라미터 | 기본값 | 설명 |
+|---|---|---|
+| `limit` | 30 (최대 200) | 개수 |
+| `minIndex` | 1 | 최소 검색지수 |
+| `includeLinked` | false | 이미 카드가 있는 키워드 포함 여부 |
+| `excludeStaples` | true | 상시 메뉴 제외 |
+| `stapleIndex` / `stapleGrowth` | 40 / 5 | 검색지수 40 이상인데 증감률 5% 미만이면 상시 메뉴로 간주 |
 
 ```json
 {
   "keywords": [
-    { "id": 42, "keyword": "흑임자라떼", "source": "youtube", "trend_id": null,
-      "search_index": "34.20", "collected_date": "2026-07-28", "growth_rate": 68.4 }
+    { "id": 42, "keyword": "흑임자라떼", "source": "naver", "trend_id": null,
+      "mention_count": 12, "search_index": "34.20", "growth_rate": 68.4,
+      "collected_date": "2026-07-28", "trend_signal": 71.2 }
   ]
 }
 ```
 
-`growth_rate`가 `null`이면 비교할 과거 데이터가 없다는 뜻(수집 2일차부터 값 생성).
-검색량이 미미한 조합 생성물은 `minIndex`로 걸러집니다.
+**`trend_signal` 내림차순으로 정렬됩니다.**
+
+```
+언급 빈도(50점 만점) + 증감률(50점 만점)
+```
+
+**검색지수는 정렬에 쓰지 않습니다.** 검색지수가 높다는 건 이미 자리잡았다는 뜻이라, 이걸 기준으로 정렬하면 에그타르트·밀크티 같은 스테디셀러가 상위를 차지해 트렌드 발굴이 되지 않습니다. 우리가 찾는 건 **"최근 글에 자주 나오는데 검색량은 아직 낮은 것"** — 태동기 신호입니다.
+
+| 필드 | 의미 |
+|---|---|
+| `mention_count` | 발굴 시 최근 글 제목에서 등장한 횟수 |
+| `growth_rate` | 네이버 검색지수 증감률(%). 최근 7일 평균 대 이전 7일 평균 |
+| `search_index` | 현재 검색지수(0~100). 참고용이며 정렬엔 미사용 |
+| `trend_signal` | 위 두 신호를 합친 0~100 점수 |
 
 ### POST /api/admin/collect
 
