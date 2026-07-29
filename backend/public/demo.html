@@ -344,6 +344,7 @@
         </div>
       </div>
       <button class="go" id="autoTrendBtn" onclick="runAutoTrends()">자동 갱신 실행</button>
+      <div id="autoTrendStatus"></div>
       <pre class="out" id="autoTrendOut"></pre>
     </div>
 
@@ -779,6 +780,23 @@ async function runAutoTrends() {
         retireManual: document.getElementById('atRetireManual').value === 'true',
       }),
     });
+
+    // remaining이 0이 될 때까지 다시 눌러야 하므로 눈에 띄게 표시한다
+    const sm = r.summary || {};
+    const done = (sm.remaining ?? 0) === 0;
+    document.getElementById('autoTrendStatus').innerHTML = `
+      <div style="margin-top:14px;padding:14px 16px;border-radius:8px;
+                  background:${done ? '#eef6ef' : 'var(--accent-soft)'};
+                  border:1px solid ${done ? '#3f9e5f' : 'var(--accent)'}">
+        <div style="font-size:15px;font-weight:600;margin-bottom:6px">
+          ${done ? '완료 — 모든 후보가 카드로 만들어졌습니다' : `아직 ${sm.remaining}개 남았습니다 — 버튼을 다시 눌러주세요`}
+        </div>
+        <div style="font-size:13px;color:var(--muted)">
+          후보 ${sm.candidates ?? 0}개 중 · 이번에 생성 ${sm.created ?? 0} · 갱신 ${sm.refreshed ?? 0} ·
+          상세(근거+이미지) ${sm.enriched ?? 0}${(sm.errors || []).length ? ` · 실패 ${sm.errors.length}` : ''}
+        </div>
+      </div>`;
+
     show('autoTrendOut', r);
     loadTrends(); // 새 카드가 공개 피드에 바로 보이는지 확인
   } catch (e) {
