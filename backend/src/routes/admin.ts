@@ -3,11 +3,13 @@ import {
   createKeyword,
   createTrend,
   discoverKeywords,
+  getPipeline,
   listKeywords,
   listRisingKeywords,
   publishTrend,
   triggerAutoTrends,
   triggerCollect,
+  triggerPipeline,
 } from '../controllers/adminController';
 import { requireAdmin, requireAuth } from '../middlewares/auth';
 import { asyncHandler } from './asyncHandler';
@@ -54,5 +56,13 @@ router.post('/keywords/discover', ...adminGuard, asyncHandler(discoverKeywords))
  * 그 검사는 컨트롤러 안에서 한다.
  */
 router.post('/collect', asyncHandler(triggerCollect));
+
+/**
+ * /pipeline도 같은 이유로 관리자 가드 대신 COLLECT_SECRET을 쓴다.
+ * 발굴 → 수집 → 카드 갱신을 한 번에 돌리는 자동 실행 진입점이다.
+ * GET은 진행 상황 조회라 부작용이 없어 그냥 열어둔다.
+ */
+router.post('/pipeline', asyncHandler(triggerPipeline));
+router.get('/pipeline', asyncHandler(getPipeline));
 
 export default router;

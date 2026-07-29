@@ -589,6 +589,56 @@ https://bnghhjikybnoztaxjuey.supabase.co/storage/v1/object/public/trend-images/t
 | 넓게 | 후보 포함 전체 키워드 | 네이버만 (5개씩 묶음) | `NAVER_KEYWORD_LIMIT` (기본 500) |
 | 깊게 | 트렌드 카드에 연결된 키워드 | 네이버 + 유튜브 | `YOUTUBE_KEYWORD_LIMIT` (기본 80) |
 
+### POST /api/admin/pipeline
+
+발굴 → 수집 → 카드 갱신을 한 번에 실행. `/collect`와 같이 `x-collect-secret` 헤더로 보호합니다.
+
+```json
+{ "discover": true, "youtube": true, "collect": true, "autoRefresh": true,
+  "withImage": true, "maxNewCards": 60, "richCount": 15 }
+```
+
+| 필드 | 기본 | 설명 |
+|---|---|---|
+| `discover` | true | 후보 키워드 발굴 |
+| `youtube` | **false** | 발굴에 유튜브 포함. 505 unit 소모라 기본은 끔 |
+| `collect` | false | 네이버·유튜브 지표 수집 |
+| `autoRefresh` | false | 카드 생성·갱신. `remaining`이 0이 될 때까지 최대 8회 반복 |
+| `withImage` | true | AI 이미지 생성 (카드당 과금). 첫 회차에만 적용 |
+
+**응답은 `202`이고 작업은 백그라운드에서 이어집니다.** 수 분씩 걸리는데 외부 스케줄러는 보통 30초에서 끊기기 때문에, 동기로 처리하면 작업이 정상 완료돼도 실패로 기록됩니다.
+
+이미 실행 중이면 `409`를 주고 중복 실행하지 않습니다 — 같은 외부 API를 두 번 쓰면 할당량이 두 배로 나가기 때문입니다.
+
+### GET /api/admin/pipeline
+
+진행 중이거나 마지막으로 끝난 실행 상태.
+
+```json
+{
+  "running": true,
+  "lastRun": {
+    "trigger": "cron:discover-light",
+    "startedAt": "...", "finishedAt": null,
+    "currentStage": "discover",
+    "discovery": { "discovered": 214, "inserted": 31, "updated": 183, "multiSource": 46, "errors": [], "sources": {} },
+    "collect": null,
+    "autoTrends": null,
+    "errors": []
+  }
+}
+```
+
+**서버가 스스로도 돌립니다.** `node-cron`으로 세 주기가 등록돼 있습니다 (시간대 `Asia/Seoul`).
+
+| 스케줄 | 기본 주기 | 하는 일 | 환경변수 |
+|---|---|---|---|
+| 가벼운 발굴 | 2시간마다 | 네이버 블로그·카페 | `DISCOVER_CRON` |
+| 유튜브 포함 발굴 | 하루 4회 | 위 + 유튜브 검색 | `DISCOVER_YOUTUBE_CRON` |
+| 전체 실행 | 매일 04:00 | 발굴 + 수집 + 카드 갱신 | `PIPELINE_CRON` |
+
+단, Render 무료 플랜은 15분 무요청 시 슬립되어 cron이 뜨지 않습니다. 외부에서 `GET /health`를 10분마다 쳐서 깨워둬야 합니다(할당량 소모 없음). 자세한 건 README의 "파이프라인 자동화" 참고.
+
 ---
 
 ## 참고

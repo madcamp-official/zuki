@@ -8,7 +8,7 @@ import adminRoutes from './routes/admin';
 import trendsRoutes, { categoriesRouter } from './routes/trends';
 import usersRoutes from './routes/users';
 import { errorHandler, notFoundHandler } from './middlewares/errorHandler';
-import { scheduleDailyCollect } from './jobs/dailyCollect';
+import { schedulePipeline } from './jobs/pipeline';
 
 dotenv.config();
 
@@ -72,7 +72,9 @@ if (require.main === module) {
   app.listen(port, () => {
     console.log(`[trendpick-backend] listening on http://localhost:${port}`);
   });
-  scheduleDailyCollect();
+  // 발굴 · 수집 · 카드 갱신 스케줄을 모두 여기서 등록한다.
+  // (예전 scheduleDailyCollect는 pipeline의 '전체 실행'에 흡수됐다)
+  schedulePipeline();
 }
 
 export default app;

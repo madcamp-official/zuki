@@ -1,4 +1,3 @@
-import cron from 'node-cron';
 import { query } from '../db/client';
 import {
   NAVER_MAX_KEYWORDS_PER_CALL,
@@ -434,11 +433,10 @@ export async function runDailyCollect(): Promise<DailyCollectSummary> {
   return summary;
 }
 
-/** node-cron 스케줄 등록 (app.ts에서 명시적으로 호출해야 시작됨) */
-export function scheduleDailyCollect(): void {
-  const expr = process.env.DAILY_COLLECT_CRON || '0 3 * * *';
-  cron.schedule(expr, () => {
-    runDailyCollect().catch((err) => console.error('[dailyCollect] 실행 실패:', err));
-  });
-  console.log(`[dailyCollect] 스케줄 등록됨: "${expr}"`);
-}
+/*
+ * 스케줄 등록은 jobs/pipeline.ts로 옮겼다.
+ *
+ * 수집만 따로 예약하면 발굴이 안 돈 상태로 수집이 먼저 도는 순서 사고가 난다.
+ * 발굴 → 수집 → 카드 갱신은 순서가 있는 하나의 흐름이라 한 곳에서 관리한다.
+ * 주기는 PIPELINE_CRON 환경변수로 바꾼다 (기존 DAILY_COLLECT_CRON 대체).
+ */
