@@ -218,34 +218,6 @@
     </div>
 
     <div class="card">
-      <h2><span class="method">POST</span>/api/admin/trends — 트렌드 카드 등록</h2>
-      <p class="hint">등록 직후엔 초안(is_published=false) 상태라 공개 피드에 안 나옵니다. 아래 발행을 해야 노출됩니다.</p>
-      <div class="row">
-        <div><label>제목 *</label><input id="tTitle" placeholder="예: 두바이초콜릿" /></div>
-        <div><label>카테고리 *</label><select id="tCategory"></select></div>
-      </div>
-      <label>요약</label>
-      <textarea id="tSummary" placeholder="3줄 이내 요약"></textarea>
-      <label>왜 뜨는지 (배경)</label>
-      <textarea id="tReason" placeholder="계절 / 해외 유행 유입 / 유명인 노출 등"></textarea>
-      <div class="row">
-        <div><label>이미지 URL</label><input id="tImage" /></div>
-        <div><label>확산 지역</label><input id="tRegion" placeholder="기본값: nationwide" /></div>
-      </div>
-      <button class="go" onclick="createTrend()">등록</button>
-      <pre class="out" id="createOut"></pre>
-    </div>
-
-    <div class="card">
-      <h2><span class="method">PATCH</span>/api/admin/trends/:id/publish — 발행</h2>
-      <div class="row">
-        <div><label>트렌드 ID</label><input id="pubId" type="number" placeholder="등록하면 자동 입력됩니다" /></div>
-      </div>
-      <button class="go" onclick="publishTrend()">발행</button>
-      <pre class="out" id="pubOut"></pre>
-    </div>
-
-    <div class="card">
       <h2><span class="method">POST/GET</span>/api/admin/keywords — 수집 대상 키워드</h2>
       <p class="hint">여기 등록된 키워드가 네이버 데이터랩·유튜브 수집 배치의 대상이 됩니다. 트렌드 ID를 연결하면 수집 결과가 그 카드의 점수/단계를 갱신합니다.</p>
       <div class="row">
@@ -273,12 +245,17 @@
 
       <label style="margin-top:4px">실행할 작업</label>
       <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px">
-        <button class="go" onclick="runPipeline({youtube:false})">발굴 (네이버)</button>
-        <button class="go ghost" onclick="runPipeline({youtube:true})">발굴 (유튜브 포함)</button>
+        <button class="go" onclick="runPipeline({youtube:false, collect:true, autoRefresh:true})">전체 (네이버만)</button>
+        <button class="go ghost" onclick="runPipeline({youtube:true, collect:true, autoRefresh:true})">전체 (유튜브 포함)</button>
+        <button class="go ghost" onclick="runPipeline({youtube:false})">발굴만</button>
         <button class="go ghost" onclick="runPipeline({archive:true})">지난 유행 발굴</button>
-        <button class="go ghost" onclick="runPipeline({youtube:true, collect:true, autoRefresh:true})">전체 실행</button>
         <button class="go ghost" onclick="pipelineStatus()">상태 확인</button>
       </div>
+      <p class="hint" style="margin-top:0">
+        <strong>전체 (네이버만)</strong>이 기본입니다 — 발굴·수집·카드 갱신을 유튜브 없이 돌립니다.
+        유튜브 할당량이 초과된 날(한국시간 오후 4시경 초기화)에도 이 버튼은 동작합니다.
+        수집 단계의 유튜브 호출은 실패해도 네이버 지표만으로 카드가 만들어집니다.
+      </p>
 
       <p class="hint" style="margin-top:0">
         <strong>발굴</strong>은 블로그·카페 글 제목에서 후보 키워드를 뽑습니다. 쿼리당 5페이지(500건)씩,
@@ -536,11 +513,9 @@ async function init() {
   try {
     const { categories } = await call('/api/categories');
     const fCat = document.getElementById('fCategory');
-    const tCat = document.getElementById('tCategory');
     const checks = document.getElementById('interestChecks');
     categories.forEach((c) => {
       fCat.insertAdjacentHTML('beforeend', `<option value="${c.slug}">${c.name}</option>`);
-      tCat.insertAdjacentHTML('beforeend', `<option value="${c.id}">${c.name}</option>`);
       checks.insertAdjacentHTML('beforeend',
         `<div style="flex:0 0 auto"><label style="display:flex;align-items:center;gap:6px;margin:0">
            <input type="checkbox" style="width:auto" class="interest" value="${c.id}" /> ${c.name}
@@ -646,38 +621,6 @@ async function saveInterests() {
 }
 
 // ---- 관리자 API ----
-async function createTrend() {
-  const body = {
-    title: document.getElementById('tTitle').value.trim(),
-    categoryId: Number(document.getElementById('tCategory').value),
-    summary: document.getElementById('tSummary').value.trim() || undefined,
-    reason: document.getElementById('tReason').value.trim() || undefined,
-    imageUrl: document.getElementById('tImage').value.trim() || undefined,
-    regionScope: document.getElementById('tRegion').value.trim() || undefined,
-  };
-  if (!body.title) return show('createOut', 'title은 필수입니다.');
-  try {
-    const r = await call('/api/admin/trends', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...authHeaders() },
-      body: JSON.stringify(body),
-    });
-    show('createOut', r);
-    // 방금 만든 id를 발행/키워드 입력칸에 자동으로 채워준다
-    document.getElementById('pubId').value = r.trend.id;
-    document.getElementById('kTrendId').value = r.trend.id;
-  } catch (e) { show('createOut', '실패: ' + e.message); }
-}
-
-async function publishTrend() {
-  const id = document.getElementById('pubId').value;
-  if (!id) return show('pubOut', '트렌드 ID를 입력하세요.');
-  try {
-    show('pubOut', await call(`/api/admin/trends/${id}/publish`, { method: 'PATCH', headers: authHeaders() }));
-    loadTrends(); // 발행됐으니 공개 피드 갱신
-  } catch (e) { show('pubOut', '실패: ' + e.message); }
-}
-
 async function createKeyword() {
   const keyword = document.getElementById('kWord').value.trim();
   const trendId = document.getElementById('kTrendId').value;
@@ -724,18 +667,24 @@ async function runPipeline(opts) {
       headers: { 'Content-Type': 'application/json', ...authHeaders(), ...secretHeader() },
       body: JSON.stringify(body),
     });
-    await pipelineStatus();
-    clearInterval(pipelineTimer);
-    pipelineTimer = setInterval(async () => {
-      const s = await pipelineStatus();
-      if (s && !s.running) {
-        clearInterval(pipelineTimer);
-        loadTrends(); // 카드가 바뀌었을 수 있으니 공개 피드를 다시 읽는다
-      }
-    }, 5000);
   } catch (e) {
-    renderPipeline(null, '실패: ' + e.message);
+    // 409 = 이미 실행 중 (스케줄이 먼저 돌고 있을 때 흔하다). 실패가 아니라
+    // "지금 도는 걸 지켜보면 되는" 상황이므로 폴링으로 넘어간다.
+    if (!String(e.message).startsWith('409')) {
+      return renderPipeline(null, '실패: ' + e.message);
+    }
+    renderPipeline(null, '이미 실행 중입니다 — 진행 중인 작업을 아래에 표시합니다.');
   }
+
+  await pipelineStatus();
+  clearInterval(pipelineTimer);
+  pipelineTimer = setInterval(async () => {
+    const s = await pipelineStatus();
+    if (s && !s.running) {
+      clearInterval(pipelineTimer);
+      loadTrends(); // 카드가 바뀌었을 수 있으니 공개 피드를 다시 읽는다
+    }
+  }, 5000);
 }
 
 async function pipelineStatus() {

@@ -339,7 +339,11 @@ export function schedulePipeline(): void {
 
   // 가벼운 발굴: 1시간마다, 네이버 블로그·카페만.
   // 5페이지 × 21쿼리 × 2코퍼스 = 210회/실행, 하루 24회면 5,040회 (한도의 20%)
-  const lightExpr = process.env.DISCOVER_CRON || '0 * * * *';
+  //
+  // 매시 "15분"인 이유: 정각으로 두면 새벽 4시에 전체 실행(0 4 * * *)과 같은
+  // 순간에 발동하고, 중복 실행 락 때문에 둘 중 하나가 스킵된다. 실측에서
+  // 전체 실행이 매일 밀리는 쪽이었다 — 수집·카드 갱신이 영영 안 도는 버그다.
+  const lightExpr = process.env.DISCOVER_CRON || '15 * * * *';
   cron.schedule(
     lightExpr,
     () => {
