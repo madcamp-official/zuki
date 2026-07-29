@@ -295,6 +295,15 @@ const BEVERAGE_FORMS = [
   '커피', '음료', '드링크', '차',
 ];
 
-export function inferCategorySlug(keyword: string): 'beverage' | 'dessert' {
-  return BEVERAGE_FORMS.some((f) => keyword.endsWith(f)) ? 'beverage' : 'dessert';
+/** 마케팅은 메뉴가 아니라 활동/이벤트라 어미가 완전히 다르다 */
+const MARKETING_FORMS = [
+  '이벤트', '챌린지', '팝업', '팝업스토어', '콜라보', '굿즈', '마케팅',
+  '프로모션', '클래스', '체험', '포토존', '스탬프', '쿠폰', '멤버십',
+  '리유저블컵', '텀블러', '키링', '스티커', '뽑기', '럭키박스', '선물세트',
+];
+
+export function inferCategorySlug(keyword: string): 'beverage' | 'dessert' | 'marketing' {
+  if (MARKETING_FORMS.some((f) => keyword.endsWith(f))) return 'marketing';
+  if (BEVERAGE_FORMS.some((f) => keyword.endsWith(f))) return 'beverage';
+  return 'dessert';
 }

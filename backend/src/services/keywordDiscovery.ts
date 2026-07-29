@@ -44,6 +44,29 @@ const FORMS = [
 const SHORT_FORMS = new Set(['티', '빵', '파이', '무스']);
 const MIN_PREFIX_FOR_SHORT_FORM = 2;
 
+/**
+ * 마케팅 카테고리의 "형태".
+ *
+ * 디저트·음료와 어휘 체계가 완전히 다르다. 메뉴 이름은 '재료 + 형태'(흑임자라떼)로
+ * 끝나지만, 마케팅 트렌드는 '활동 + 형식'(굿즈 이벤트, 팝업스토어, 브이로그 챌린지)
+ * 형태라 FORMS로는 하나도 잡히지 않는다. 실제로 마케팅 카드가 0개였던 이유다.
+ */
+const MARKETING_SUFFIXES = [
+  '이벤트', '챌린지', '팝업', '팝업스토어', '콜라보', '굿즈', '마케팅',
+  '프로모션', '클래스', '체험', '스탬프', '쿠폰', '멤버십', '뽑기',
+];
+
+/**
+ * 그 자체로 하나의 마케팅 소재인 단어들.
+ * 접미사와 달리 앞말 없이도 유효하다 ('리유저블컵', '포토존').
+ */
+const MARKETING_TERMS = [
+  '리유저블컵', '텀블러', '키링', '스티커', '포토존', '럭키박스', '선물세트',
+];
+
+/** 접미사형은 앞말이 있어야 인정한다 ('이벤트' 단독은 너무 일반적이라 제외) */
+const MIN_PREFIX_FOR_MARKETING = 2;
+
 /** 제목에서 뽑히면 안 되는 흔한 단어들 */
 const STOPWORDS = new Set([
   '카페', '디저트', '음료', '메뉴', '신메뉴', '레시피', '만들기', '먹방',
@@ -84,13 +107,37 @@ const REGION_PREFIXES = [
  * 보면 이미 확산된 뒤에야 잡히므로, 선행 지표로 함께 훑는다.
  */
 export const NAVER_DISCOVERY_QUERIES = [
+  // 디저트·음료
   '카페 신메뉴',
   '요즘 유행 디저트',
   '신상 디저트',
   '베이커리 신상',
   '카페 신상 음료',
+  '디저트 추천',
+  '카페 시그니처 메뉴',
+  '요즘 뜨는 음료',
+  // 편의점 — 국내 디저트 유행은 편의점에서 먼저 터지는 경우가 많다
   '편의점 신메뉴',
   '편의점 신상 디저트',
+  '편의점 신상 음료',
+  // 마케팅 — 어휘 체계가 달라 따로 검색해야 잡힌다
+  '카페 이벤트',
+  '카페 굿즈',
+  '카페 팝업스토어',
+  '카페 마케팅',
+  '베이커리 이벤트',
+  // 회고 — 지난 유행을 찾기 위한 검색어.
+  //
+  // 위 검색어들은 전부 "지금 올라오는 글"을 찾으므로 구조적으로 현재 트렌드만
+  // 잡힌다. 흑당버블티처럼 이미 식은 메뉴는 지금 아무도 글을 안 쓰니 영원히
+  // 발굴되지 않는다. 그런데 사람들은 "지난 유행을 정리한 글"을 따로 쓴다.
+  // 그런 회고 글을 찾으면 과거 유행 키워드를 얻을 수 있고, 그것들은 수집 후
+  // 하락기 카드가 되어 "지난 유행" 섹션을 채운다.
+  '유행 지난 디저트',
+  '작년 유행 디저트',
+  '한때 유행했던 카페 메뉴',
+  '요즘 안 보이는 음료',
+  '카페 트렌드 정리',
 ];
 
 /**
@@ -102,6 +149,7 @@ export const YOUTUBE_DISCOVERY_QUERIES = [
   '요즘 유행 디저트',
   '신상 디저트 리뷰',
   '편의점 신상',
+  '카페 이벤트 굿즈',
 ];
 
 /**
@@ -158,6 +206,15 @@ export function normalizeKeyword(rawToken: string): string | null {
   // 지역명을 벗기고 나서 다시 검사 ('서울빵' -> '빵'은 형태 단어 그 자체라 탈락)
   if (token.length < 2) return null;
   if (STOPWORDS.has(token) || BRAND_NAMES.has(token)) return null;
+
+  // 마케팅 소재는 그 자체로 유효하다 ('리유저블컵', '포토존')
+  if (MARKETING_TERMS.some((t) => token.endsWith(t))) return token;
+
+  // 접미사형은 앞말이 붙어야 한다 ('굿즈이벤트' O, '이벤트' X)
+  const marketingSuffix = MARKETING_SUFFIXES.find(
+    (f) => token.endsWith(f) && token.length - f.length >= MIN_PREFIX_FOR_MARKETING
+  );
+  if (marketingSuffix) return token;
 
   const form = FORMS.find((f) => token.endsWith(f) && token.length > f.length);
   if (!form) return null;

@@ -124,6 +124,21 @@ const CANDIDATE_SQL = `
    WHERE li.value >= $1
      AND k.mention_count >= $2
      AND k.is_seasonal = false
+     -- 교차 검증: 몇 개 소스(블로그/카페/유튜브)에서 잡혔는지.
+     --
+     -- 이게 노이즈를 거르는 가장 효과적인 장치다. 실측 결과:
+     --   소스 1개 -> 마티에부산하버시티(호텔), 돼지게티(라면), 자몽톡허니블랙티
+     --   소스 2~3개 -> 씬쿠키, 샌드베이글, 왁뿌소금빵
+     -- 개인 가게 이름이나 다른 카테고리 상품은 카페·디저트 검색 세 곳에서
+     -- 동시에 잡히지 않는다. 규칙 기반 필터로는 '티'·'빵' 같은 흔한 어미를
+     -- 끝없이 막아야 하는데, 이 조건 하나가 그걸 대체한다.
+     --
+     -- 단, 사람이 직접 등록한 키워드(source='editor')는 이 검사를 건너뛴다.
+     -- 지난 유행(두바이초콜릿, 흑당버블티 등)은 지금 아무도 글을 안 써서
+     -- 발굴에 걸리지 않는다. 그런데 "지난 유행"을 보여주려면 바로 그런
+     -- 키워드가 필요하다. 교차검증은 자동 발굴의 노이즈를 거르는 장치이지,
+     -- 의도적으로 넣은 감시 대상까지 막으라는 뜻이 아니다.
+     AND (k.source = 'editor' OR COALESCE(array_length(k.sources, 1), 0) >= $3)
      -- 스테디셀러 제외: 규모는 큰데 거의 안 움직이는 것 (에그타르트, 밀크티 등)
      AND NOT (li.value >= 40 AND ABS(COALESCE(lg.value,0)) < 5)
    ORDER BY trend_signal DESC, k.mention_count DESC
@@ -138,6 +153,13 @@ export interface AutoTrendOptions {
   minIndex?: number;
   /** 최소 언급 횟수 (가게 이름 등 일회성 표현 배제) */
   minMentions?: number;
+  /**
+   * 최소 소스 수. 기본 2 — 두 곳 이상에서 잡힌 것만 카드로 만든다.
+   * 한 곳에서만 나온 키워드는 그 소스의 편향이거나 카페 트렌드가 아닌
+   * 경우가 대부분이다(호텔 이름, 라면 등). 1로 낮추면 후보는 늘지만
+   * 노이즈도 같이 늘어난다.
+   */
+  minSources?: number;
   /** AI 이미지 생성 여부. 카드당 과금되므로 끌 수 있게 둔다 */
   withImage?: boolean;
   /** 손으로 만든 카드(시드 더미 포함)도 함께 내릴지 */
@@ -152,6 +174,7 @@ export async function refreshAutoTrends(
     richCount = 15,
     minIndex = 5,
     minMentions = 2,
+    minSources = 2,
     withImage = true,
     retireManual = false,
   } = options;
@@ -169,7 +192,7 @@ export async function refreshAutoTrends(
     trends: [],
   };
 
-  const candidates = await query<Candidate>(CANDIDATE_SQL, [minIndex, minMentions]);
+  const candidates = await query<Candidate>(CANDIDATE_SQL, [minIndex, minMentions, minSources]);
   summary.candidates = candidates.length;
 
   // 아직 카드가 없는 후보만 이번 실행에서 새로 만든다.

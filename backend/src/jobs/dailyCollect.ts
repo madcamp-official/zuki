@@ -27,6 +27,9 @@ const NAVER_KEYWORD_LIMIT = Number(process.env.NAVER_KEYWORD_LIMIT ?? 500);
 /** 네이버 호출 사이 대기(ms). 연속 호출로 속도 제한에 걸리는 것을 방지 */
 const NAVER_CALL_DELAY_MS = Number(process.env.NAVER_CALL_DELAY_MS ?? 200);
 
+/** 그래프용으로 저장할 일별 시계열 길이 */
+const SERIES_DAYS = Number(process.env.SEARCH_SERIES_DAYS ?? 60);
+
 /**
  * 언급 추이를 측정할 키워드 수 상한.
  * 키워드당 블로그 검색 1~3회를 쓴다. 검색 API 한도는 하루 25,000회로 넉넉하지만
@@ -111,6 +114,40 @@ async function upsertMetric(
      ON CONFLICT (keyword_id, source_type, metric_type, collected_date)
      DO UPDATE SET value = EXCLUDED.value`,
     [keywordId, sourceType, metricType, value, today()]
+  );
+}
+
+/**
+ * 네이버가 준 일별 시계열을 그대로 저장한다 — 상세 화면의 "검색량 추이" 그래프용.
+ *
+ * 왜 필요한가: 우리는 지금까지 7일 평균 한 값만 저장하고 원본 시계열을 버렸다.
+ * 그러면 그래프에 찍을 점이 수집 횟수만큼(하루 1개)밖에 없어서, 며칠을 기다려야
+ * 선이 그려진다. 그런데 데이터랩은 이미 3개월치 일별 데이터를 통째로 주고 있다.
+ * 그걸 저장하면 첫 수집만으로 바로 그래프가 나온다.
+ *
+ * metric_type을 search_index와 분리한 이유:
+ *   search_index          = 최근 7일 평균 (점수 계산용, 하루 1개)
+ *   search_index_daily    = 원본 일별 값 (그래프용, 날짜별)
+ * 같은 타입에 섞으면 "최신값"을 읽는 스코어링 쿼리가 원본값을 집어간다.
+ */
+async function saveDailySeries(keywordId: number, points: NaverTrendPoint[]): Promise<void> {
+  const recent = points.slice(-SERIES_DAYS);
+  if (recent.length === 0) return;
+
+  // 한 행씩 넣으면 키워드당 수십 번 왕복하므로 한 번에 밀어넣는다
+  const values: string[] = [];
+  const params: unknown[] = [keywordId];
+  for (const p of recent) {
+    params.push(p.ratio, p.period);
+    values.push(`($1, 'naver', 'search_index_daily', $${params.length - 1}, $${params.length}::date)`);
+  }
+
+  await query(
+    `INSERT INTO keyword_metrics (keyword_id, source_type, metric_type, value, collected_date)
+     VALUES ${values.join(', ')}
+     ON CONFLICT (keyword_id, source_type, metric_type, collected_date)
+     DO UPDATE SET value = EXCLUDED.value`,
+    params
   );
 }
 
@@ -210,6 +247,8 @@ export async function runDailyCollect(): Promise<DailyCollectSummary> {
         const calc = calcNaverSignals(r.points);
         naverByKeyword.set(r.keyword, calc);
         await upsertMetric(kw.id, 'naver', 'search_index', calc.level ?? 0);
+        // 원본 일별 시계열도 저장한다 (상세 화면 그래프용)
+        await saveDailySeries(kw.id, r.points);
 
         // 증감률도 함께 저장한다.
         // 네이버가 3개월 시계열을 통째로 주므로 이 값은 첫 수집에서 이미 계산돼 있다.

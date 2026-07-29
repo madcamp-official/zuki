@@ -385,6 +385,8 @@ export async function triggerAutoTrends(req: Request, res: Response) {
     richCount: Math.min(Number(req.body?.richCount ?? 15), 50),
     minIndex: Number(req.body?.minIndex ?? 5),
     minMentions: Number(req.body?.minMentions ?? 2),
+    // 소스 2개 이상만 카드로. 호텔·라면 등 카페 트렌드가 아닌 것을 걸러낸다
+    minSources: Number(req.body?.minSources ?? 2),
     withImage: req.body?.withImage !== false,
     // 시드 더미를 걷어내고 실제 수집 데이터만 보이게 할 때 사용. 기본은 안전하게 false
     retireManual: req.body?.retireManual === true,
