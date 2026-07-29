@@ -182,6 +182,7 @@ export interface MyProfile {
   regionSi: string | null;
   regionGu: string | null;
   role: string;
+  notifEnabled: boolean;
   categoryInterests: { id: number; name: string; slug: CategorySlug }[];
 }
 
@@ -192,6 +193,7 @@ interface RawProfile {
   region_si: string | null;
   region_gu: string | null;
   role: string;
+  notif_enabled: boolean;
 }
 
 interface RawCategoryInterest {
@@ -211,6 +213,7 @@ function toMyProfile(
     regionSi: user.region_si,
     regionGu: user.region_gu,
     role: user.role,
+    notifEnabled: user.notif_enabled,
     categoryInterests: categoryInterests.map((c) => ({
       id: c.id,
       name: c.name,
@@ -232,11 +235,12 @@ export async function fetchMyProfile(): Promise<MyProfile | null> {
   }
 }
 
-/** PATCH /api/users/me : 매장명·지역 수정 */
+/** PATCH /api/users/me : 매장명·지역·알림 설정 수정 */
 export async function updateMyProfile(params: {
   storeName?: string;
   regionSi?: string;
   regionGu?: string;
+  notifEnabled?: boolean;
 }): Promise<void> {
   await authFetch("/api/users/me", {
     method: "PATCH",

@@ -20,7 +20,7 @@ export async function getMyProfile(req: Request, res: Response) {
   const userId = requireUserId(req);
 
   const [profile] = await query(
-    `SELECT id, email, store_name, region_si, region_gu, role, created_at
+    `SELECT id, email, store_name, region_si, region_gu, role, notif_enabled, created_at
        FROM users WHERE id = $1`,
     [userId]
   );
@@ -47,20 +47,22 @@ export async function getMyProfile(req: Request, res: Response) {
  */
 export async function updateMyProfile(req: Request, res: Response) {
   const userId = requireUserId(req);
-  const { storeName, regionSi, regionGu } = req.body as {
+  const { storeName, regionSi, regionGu, notifEnabled } = req.body as {
     storeName?: string;
     regionSi?: string;
     regionGu?: string;
+    notifEnabled?: boolean;
   };
 
   const [updated] = await query(
     `UPDATE users
-        SET store_name = COALESCE($2, store_name),
-            region_si  = COALESCE($3, region_si),
-            region_gu  = COALESCE($4, region_gu)
+        SET store_name    = COALESCE($2, store_name),
+            region_si     = COALESCE($3, region_si),
+            region_gu     = COALESCE($4, region_gu),
+            notif_enabled = COALESCE($5, notif_enabled)
       WHERE id = $1
-      RETURNING id, email, store_name, region_si, region_gu, role`,
-    [userId, storeName ?? null, regionSi ?? null, regionGu ?? null]
+      RETURNING id, email, store_name, region_si, region_gu, role, notif_enabled`,
+    [userId, storeName ?? null, regionSi ?? null, regionGu ?? null, notifEnabled ?? null]
   );
 
   if (!updated) {

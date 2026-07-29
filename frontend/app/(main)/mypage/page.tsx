@@ -5,7 +5,6 @@ import Link from "next/link";
 import TrendCard from "@/components/TrendCard";
 import { CATEGORIES } from "@/components/CategoryNav";
 import type { CategorySlug, TrendItem } from "@/lib/trends";
-import { REGIONS, REGION_SI_LIST } from "@/lib/regions";
 import {
   fetchMyBookmarks,
   fetchMyProfile,
@@ -19,8 +18,8 @@ export default function MyPage() {
   const [loadingProfile, setLoadingProfile] = useState(true);
 
   const [interests, setInterests] = useState<CategorySlug[]>([]);
-  const [regionSi, setRegionSi] = useState<string | null>(null);
-  const [regionGu, setRegionGu] = useState<string | null>(null);
+  const [storeName, setStoreName] = useState("");
+  const [notifEnabled, setNotifEnabled] = useState(true);
 
   const [bookmarked, setBookmarked] = useState<TrendItem[]>([]);
   const [loadingBookmarks, setLoadingBookmarks] = useState(true);
@@ -37,8 +36,8 @@ export default function MyPage() {
         setProfile(data);
         if (data) {
           setInterests(data.categoryInterests.map((c) => c.slug));
-          setRegionSi(data.regionSi);
-          setRegionGu(data.regionGu);
+          setStoreName(data.storeName ?? "");
+          setNotifEnabled(data.notifEnabled);
         }
       })
       .finally(() => {
@@ -82,8 +81,8 @@ export default function MyPage() {
     try {
       await Promise.all([
         updateMyProfile({
-          regionSi: regionSi ?? undefined,
-          regionGu: regionGu ?? undefined,
+          storeName: storeName.trim() || undefined,
+          notifEnabled,
         }),
         updateMyCategoryInterests(interests),
       ]);
@@ -102,7 +101,7 @@ export default function MyPage() {
       <div className="mx-auto flex max-w-3xl flex-col items-center gap-4 px-6 py-20 text-center">
         <h1 className="font-heading text-3xl text-dark">마이페이지</h1>
         <p className="text-base text-gray-500">
-          즐겨찾기와 관심 카테고리·지역을 관리하려면 로그인이 필요해요
+          즐겨찾기, 관심 카테고리, 매장 정보를 관리하려면 로그인이 필요해요
         </p>
         <Link
           href="/login"
@@ -119,7 +118,7 @@ export default function MyPage() {
       <div>
         <h1 className="font-heading text-3xl text-dark">마이페이지</h1>
         <p className="mt-2 text-base text-gray-500">
-          즐겨찾기와 관심 카테고리·지역을 관리하세요
+          즐겨찾기, 관심 카테고리, 매장 정보를 관리하세요
         </p>
       </div>
 
@@ -167,55 +166,44 @@ export default function MyPage() {
       </section>
 
       <section className="flex flex-col gap-3 rounded-2xl bg-white p-6 shadow-sm">
-        <h2 className="font-heading text-2xl text-dark">지역 설정</h2>
+        <h2 className="font-heading text-2xl text-dark">매장 정보</h2>
         <p className="-mt-1 text-sm text-gray-400">
-          지역별로 트렌드 확산 속도가 달라 참고 정보로 활용돼요
+          매장명을 등록하면 브리핑 메시지에 반영돼요
         </p>
+        <input
+          type="text"
+          value={storeName}
+          onChange={(e) => setStoreName(e.target.value)}
+          placeholder="예: 소보로베이커리 강남점"
+          maxLength={100}
+          className="rounded-xl border border-[#f0e2d6] bg-cream px-4 py-3 text-base text-dark outline-none focus:border-strawberry"
+        />
+      </section>
 
-        <div className="flex flex-col gap-2 pt-1">
-          <p className="text-sm font-semibold text-gray-400">시/도</p>
-          <div className="flex flex-wrap gap-2">
-            {REGION_SI_LIST.map((si) => (
-              <button
-                key={si}
-                type="button"
-                onClick={() => {
-                  setRegionSi(si);
-                  setRegionGu(null);
-                }}
-                className={`rounded-full px-4 py-2 text-base font-medium transition-colors ${
-                  regionSi === si
-                    ? "bg-strawberry text-white"
-                    : "bg-cream text-gray-500 hover:bg-rose-50"
-                }`}
-              >
-                {si}
-              </button>
-            ))}
+      <section className="flex flex-col gap-3 rounded-2xl bg-white p-6 shadow-sm">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="font-heading text-2xl text-dark">알림 설정</h2>
+            <p className="mt-1 text-sm text-gray-400">
+              매일 아침, 오늘의 트렌드 브리핑을 알려드려요
+            </p>
           </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={notifEnabled}
+            onClick={() => setNotifEnabled((prev) => !prev)}
+            className={`relative h-8 w-14 shrink-0 rounded-full transition-colors ${
+              notifEnabled ? "bg-strawberry" : "bg-gray-200"
+            }`}
+          >
+            <span
+              className={`absolute top-1 h-6 w-6 rounded-full bg-white shadow-sm transition-transform ${
+                notifEnabled ? "translate-x-7" : "translate-x-1"
+              }`}
+            />
+          </button>
         </div>
-
-        {regionSi && (
-          <div className="flex flex-col gap-2 pt-2">
-            <p className="text-sm font-semibold text-gray-400">구/군</p>
-            <div className="flex flex-wrap gap-2">
-              {REGIONS[regionSi].map((gu) => (
-                <button
-                  key={gu}
-                  type="button"
-                  onClick={() => setRegionGu(gu)}
-                  className={`rounded-full px-4 py-2 text-base font-medium transition-colors ${
-                    regionGu === gu
-                      ? "bg-strawberry text-white"
-                      : "bg-cream text-gray-500 hover:bg-rose-50"
-                  }`}
-                >
-                  {gu}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
       </section>
 
       <div className="flex flex-col gap-2">
