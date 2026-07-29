@@ -127,7 +127,14 @@ const CANDIDATE_SQL = `
     LEFT JOIN latest_velocity lv ON lv.keyword_id = k.id
    WHERE li.value >= $1
      AND k.mention_count >= $2
-     AND k.is_seasonal = false
+     -- is_seasonal은 여기서 거르지 않는다.
+     --
+     -- 원래는 "작년 같은 달에도 높았던 것"을 빼서 스테디셀러의 계절 반복을
+     -- 트렌드로 오인하지 않으려던 건데, 7월 실측에서 빙수·스무디·에이드 등
+     -- 여름 메뉴 전체가 걸리며 후보 127개 중 107개를 지워버렸다.
+     -- 카탈로그 관점에서 계절 유행도 사장님에게 보여줄 가치가 있다 —
+     -- "지금 빙수가 뜬다"는 계절성이어도 유의미한 정보다.
+     -- is_seasonal 값 자체는 keywords에 남아 있어 문구·분석에 쓸 수 있다.
      -- 교차 검증: 몇 개 소스(블로그/카페/유튜브)에서 잡혔는지.
      --
      -- 이게 노이즈를 거르는 가장 효과적인 장치다. 실측 결과:
