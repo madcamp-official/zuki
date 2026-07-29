@@ -166,14 +166,10 @@ export async function discoverKeywords(req: Request, res: Response) {
  *
  * 진행 상황은 GET /api/admin/pipeline 으로 확인한다.
  *
- * /collect와 같은 이유로 관리자 토큰 대신 COLLECT_SECRET으로 보호한다.
+ * 보호는 라우터의 requireSecretOrAdmin이 담당한다.
+ * 외부 스케줄러는 x-collect-secret, 데모 페이지는 로그인 토큰을 쓴다.
  */
 export async function triggerPipeline(req: Request, res: Response) {
-  const secret = process.env.COLLECT_SECRET;
-  if (secret && req.header('x-collect-secret') !== secret) {
-    throw new ApiError(401, '파이프라인 실행 권한이 없습니다.');
-  }
-
   if (getPipelineStatus().running) {
     res.status(409).json({ message: '이미 실행 중입니다.', status: getPipelineStatus() });
     return;
@@ -366,15 +362,10 @@ export async function triggerAutoTrends(req: Request, res: Response) {
  *     (Render 무료 플랜은 15분 미사용 시 슬립되어 node-cron이 뜨지 않기 때문)
  *
  * 이 API는 호출할 때마다 네이버·유튜브 할당량을 실제로 소모하므로,
- * COLLECT_SECRET이 설정돼 있으면 x-collect-secret 헤더가 일치해야만 실행한다.
- * 미설정 시에는 기존처럼 그냥 열려 있다(로컬 개발 편의 + 하위 호환).
+ * 라우터의 requireSecretOrAdmin으로 보호한다
+ * (스케줄러는 x-collect-secret, 데모 페이지는 로그인 토큰).
  */
-export async function triggerCollect(req: Request, res: Response) {
-  const secret = process.env.COLLECT_SECRET;
-  if (secret && req.header('x-collect-secret') !== secret) {
-    throw new ApiError(401, '수집 실행 권한이 없습니다.');
-  }
-
+export async function triggerCollect(_req: Request, res: Response) {
   const summary = await runDailyCollect();
   res.json({ summary });
 }

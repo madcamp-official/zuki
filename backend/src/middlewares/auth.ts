@@ -146,3 +146,28 @@ export function requireAdmin(req: Request, _res: Response, next: NextFunction) {
   }
   next();
 }
+
+/**
+ * 비밀키 **또는** 관리자 로그인 중 하나면 통과.
+ *
+ * 배치 실행 API(/collect, /pipeline)는 호출자가 둘로 갈린다:
+ *   외부 스케줄러 — 로그인할 수 없으니 x-collect-secret 헤더를 쓴다
+ *   관리자(데모 페이지) — 이미 로그인해 있으니 Bearer 토큰을 쓴다
+ * 한쪽만 받으면 나머지 한쪽이 항상 401이 난다. 실제로 데모 페이지 버튼이
+ * 그래서 막혔다.
+ *
+ * 비밀키를 먼저 보는 이유는 스케줄러 쪽 경로에서 DB(ensureProfile)를 건드리지
+ * 않고 끝내기 위해서다.
+ */
+export function requireSecretOrAdmin(req: Request, res: Response, next: NextFunction) {
+  const secret = process.env.COLLECT_SECRET;
+
+  // 비밀키가 아예 설정 안 됐으면 로컬 개발 환경으로 보고 열어둔다 (기존 /collect 동작과 동일)
+  if (!secret) return next();
+  if (req.header('x-collect-secret') === secret) return next();
+
+  requireAuth(req, res, (err?: unknown) => {
+    if (err) return next(err);
+    requireAdmin(req, res, next);
+  });
+}

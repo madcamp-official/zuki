@@ -566,8 +566,8 @@ https://bnghhjikybnoztaxjuey.supabase.co/storage/v1/object/public/trend-images/t
 
 네이버/유튜브 수집 배치를 즉시 실행. body 없음.
 
-`COLLECT_SECRET` 환경변수가 설정돼 있으면 `x-collect-secret` 헤더가 일치해야 합니다(불일치 시 `401`).
-비어 있으면 인증 없이 호출 가능합니다. 배포 환경에서는 외부 스케줄러가 이 API를 매일 호출해 자동 수집을 수행합니다.
+`x-collect-secret` 헤더 또는 관리자 로그인 토큰 중 하나면 통과합니다(둘 다 없으면 `401`).
+`COLLECT_SECRET`이 비어 있으면 인증 없이 호출 가능합니다.
 
 ```json
 {
@@ -591,7 +591,11 @@ https://bnghhjikybnoztaxjuey.supabase.co/storage/v1/object/public/trend-images/t
 
 ### POST /api/admin/pipeline
 
-발굴 → 수집 → 카드 갱신을 한 번에 실행. `/collect`와 같이 `x-collect-secret` 헤더로 보호합니다.
+발굴 → 수집 → 카드 갱신을 한 번에 실행.
+
+`/collect`와 함께 **`x-collect-secret` 헤더 또는 관리자 로그인 토큰 중 하나**면 통과합니다.
+호출자가 둘로 갈리기 때문입니다 — 외부 스케줄러는 로그인할 수 없으니 비밀키를 쓰고, 데모 페이지의 관리자는 이미 로그인해 있으니 Bearer 토큰을 씁니다.
+`COLLECT_SECRET`이 비어 있으면 로컬 개발로 보고 인증 없이 열립니다.
 
 ```json
 { "discover": true, "youtube": true, "collect": true, "autoRefresh": true,

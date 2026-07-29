@@ -11,7 +11,7 @@ import {
   triggerCollect,
   triggerPipeline,
 } from '../controllers/adminController';
-import { requireAdmin, requireAuth } from '../middlewares/auth';
+import { requireAdmin, requireAuth, requireSecretOrAdmin } from '../middlewares/auth';
 import { asyncHandler } from './asyncHandler';
 
 const router = Router();
@@ -50,19 +50,18 @@ router.get('/keywords/rising', ...adminGuard, asyncHandler(listRisingKeywords));
 router.post('/keywords/discover', ...adminGuard, asyncHandler(discoverKeywords));
 
 /**
- * /collect는 관리자 가드를 붙이지 않는다.
- * 외부 스케줄러(cron-job.org)가 매일 호출하는데, 스케줄러는 로그인 토큰을
- * 가질 수 없기 때문이다. 대신 COLLECT_SECRET 헤더로 보호하며,
- * 그 검사는 컨트롤러 안에서 한다.
+ * 배치 실행 API는 다른 가드를 쓴다.
+ *
+ * 호출자가 둘로 갈리기 때문이다. 외부 스케줄러(cron-job.org)는 로그인할 수
+ * 없으니 x-collect-secret 헤더를 쓰고, 데모 페이지의 관리자는 이미 로그인해
+ * 있으니 Bearer 토큰을 쓴다. requireSecretOrAdmin이 둘 다 받는다.
+ *
+ * GET /pipeline은 진행 상황 조회라 부작용이 없어 열어둔다.
  */
-router.post('/collect', asyncHandler(triggerCollect));
+const batchGuard: RequestHandler[] = authDisabled ? [] : [requireSecretOrAdmin];
 
-/**
- * /pipeline도 같은 이유로 관리자 가드 대신 COLLECT_SECRET을 쓴다.
- * 발굴 → 수집 → 카드 갱신을 한 번에 돌리는 자동 실행 진입점이다.
- * GET은 진행 상황 조회라 부작용이 없어 그냥 열어둔다.
- */
-router.post('/pipeline', asyncHandler(triggerPipeline));
+router.post('/collect', ...batchGuard, asyncHandler(triggerCollect));
+router.post('/pipeline', ...batchGuard, asyncHandler(triggerPipeline));
 router.get('/pipeline', asyncHandler(getPipeline));
 
 export default router;
