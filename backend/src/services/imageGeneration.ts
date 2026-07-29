@@ -115,6 +115,30 @@ export function buildTrendImagePrompt(
     .join(' ');
 }
 
+// 홈 히어로 배너 전용 스타일. 카드 이미지(COMMON_STYLE)는 정사각형 상품컷이라
+// 배너에 그대로 쓰면 밋밋하다 — 가로 구도에 장식 요소를 더해 "1위" 느낌을 낸다.
+const BANNER_STYLE =
+  'Ultra realistic commercial food photography for a wide hero banner, ' +
+  'dynamic diagonal composition with the food slightly off-center, ' +
+  'dramatic soft studio lighting, shallow depth of field, ' +
+  'floating decorative elements around the food matching its main ingredient ' +
+  '(e.g. fruit pieces, powder, steam, or drizzle), subtle sparkle accents, ' +
+  'warm vibrant colors, glossy appetizing texture, high-end dessert magazine cover quality, ' +
+  '8k, no text, no watermark, no logo, no people, wide 16:9 crop, ' +
+  'premium and celebratory mood fit for a "#1 trending" banner.';
+
+/** 카드용 프롬프트를 재사용하되 배너 전용 스타일/비율로 다시 감싼다 */
+export function buildBannerImagePrompt(
+  title: string,
+  categorySlug: string,
+  summary: string | null,
+  evidence: ImageEvidenceItem[] = [],
+): string {
+  const cardPrompt = buildTrendImagePrompt(title, categorySlug, summary, evidence);
+  const subject = cardPrompt.slice(0, cardPrompt.indexOf(COMMON_STYLE)).trim();
+  return `${subject} ${BANNER_STYLE}`;
+}
+
 let client: OpenAI | null = null;
 function getClient(): OpenAI {
   if (!client) {
@@ -159,6 +183,41 @@ async function uploadToStorage(fileName: string, buffer: Buffer): Promise<string
   return `${supabaseUrl}/storage/v1/object/public/${objectPath}`;
 }
 
+/** OpenAI로 이미지를 생성해 버퍼로 받고, Storage(또는 로컬 폴백)에 올려 URL을 돌려준다 */
+async function generateAndStore(
+  prompt: string,
+  fileName: string,
+  size: '1024x1024' | '1536x1024',
+): Promise<string> {
+  const result = await getClient().images.generate({
+    model: 'gpt-image-1',
+    prompt,
+    size,
+    quality: 'medium',
+    n: 1,
+  });
+
+  const b64 = result.data?.[0]?.b64_json;
+  if (!b64) {
+    throw new Error('OpenAI 응답에 이미지 데이터가 없습니다.');
+  }
+
+  const buffer = Buffer.from(b64, 'base64');
+
+  if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    return uploadToStorage(fileName, buffer);
+  }
+
+  // 로컬 폴백: 프론트 public 폴더에 직접 쓴다 (배포 환경에서는 동작하지 않음)
+  console.warn(
+    '[imageGeneration] SUPABASE_SERVICE_ROLE_KEY가 없어 로컬 파일로 저장합니다. ' +
+      '배포 환경에서는 이 경로가 서빙되지 않으니 키를 설정하세요.'
+  );
+  fs.mkdirSync(OUTPUT_DIR, { recursive: true });
+  fs.writeFileSync(path.join(OUTPUT_DIR, fileName), buffer);
+  return `/generated/trends/${fileName}`;
+}
+
 /**
  * 트렌드 하나에 대해 OpenAI로 이미지를 생성하고 접근 가능한 URL을 반환한다.
  *
@@ -173,33 +232,20 @@ export async function generateTrendImage(
   evidence: ImageEvidenceItem[] = [],
 ): Promise<string> {
   const prompt = buildTrendImagePrompt(title, categorySlug, summary, evidence);
+  return generateAndStore(prompt, `trend-${trendId}.png`, '1024x1024');
+}
 
-  const result = await getClient().images.generate({
-    model: 'gpt-image-1',
-    prompt,
-    size: '1024x1024',
-    quality: 'medium',
-    n: 1,
-  });
-
-  const b64 = result.data?.[0]?.b64_json;
-  if (!b64) {
-    throw new Error('OpenAI 응답에 이미지 데이터가 없습니다.');
-  }
-
-  const buffer = Buffer.from(b64, 'base64');
-  const fileName = `trend-${trendId}.png`;
-
-  if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
-    return uploadToStorage(fileName, buffer);
-  }
-
-  // 로컬 폴백: 프론트 public 폴더에 직접 쓴다 (배포 환경에서는 동작하지 않음)
-  console.warn(
-    '[imageGeneration] SUPABASE_SERVICE_ROLE_KEY가 없어 로컬 파일로 저장합니다. ' +
-      '배포 환경에서는 이 경로가 서빙되지 않으니 키를 설정하세요.'
-  );
-  fs.mkdirSync(OUTPUT_DIR, { recursive: true });
-  fs.writeFileSync(path.join(OUTPUT_DIR, fileName), buffer);
-  return `/generated/trends/${fileName}`;
+/**
+ * 홈 히어로 배너 전용 이미지를 생성한다. 1위 트렌드가 바뀔 때만 호출되므로
+ * (autoTrends.ts 참고) 매 요청마다 과금되지 않는다.
+ */
+export async function generateBannerImage(
+  trendId: string | number,
+  title: string,
+  categorySlug: string,
+  summary: string | null,
+  evidence: ImageEvidenceItem[] = [],
+): Promise<string> {
+  const prompt = buildBannerImagePrompt(title, categorySlug, summary, evidence);
+  return generateAndStore(prompt, `banner-${trendId}.png`, '1536x1024');
 }

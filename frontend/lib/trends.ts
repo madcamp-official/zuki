@@ -9,6 +9,8 @@ export interface TrendItem {
   category: CategorySlug;
   status: TrendStatus;
   image: string;
+  /** 홈 히어로 배너 전용 이미지 (1위일 때만 존재) */
+  bannerImage?: string | null;
   searchGrowth: number;
   mentionGrowth: number;
   regionScope: string;

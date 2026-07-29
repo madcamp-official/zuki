@@ -29,6 +29,7 @@ interface RawTrend {
   status: string;
   score: string | number;
   image_url?: string | null;
+  banner_image_url?: string | null;
   region_scope: string;
   category_name: string;
   category_slug: string;
@@ -51,6 +52,7 @@ function toTrendItem(raw: RawTrend, index: number): TrendItem {
     category: CATEGORY_SLUG_MAP[raw.category_slug] ?? "dessert",
     status: STATUS_MAP[raw.status] ?? "태동기",
     image: raw.image_url || PLACEHOLDER_IMAGE,
+    bannerImage: raw.banner_image_url ?? null,
     searchGrowth: score,
     // 백엔드에 아직 언급량 지표가 없어 검색량 기반으로 임시 표시
     mentionGrowth: score,

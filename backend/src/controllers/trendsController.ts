@@ -123,7 +123,7 @@ export async function getTrendDetail(req: Request, res: Response) {
   const [trend] = await query(
     `${METRICS_CTE}
      SELECT t.id, t.title, t.summary, t.reason, t.status, t.score,
-            t.image_url, t.region_scope, t.created_at,
+            t.image_url, t.banner_image_url, t.region_scope, t.created_at,
             t.is_auto, t.evidence,
             c.name AS category_name, c.slug AS category_slug,
             ${METRIC_COLUMNS}
