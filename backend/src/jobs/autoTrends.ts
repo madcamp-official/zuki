@@ -1,11 +1,6 @@
 import { query } from '../db/client';
-<<<<<<< HEAD
-import { generateTrendImage } from '../services/imageGeneration';
-import { generateTrendContent, buildBasicContent, inferCategorySlug } from '../services/trendContent';
-=======
 import { generateTrendImage, generateBannerImage } from '../services/imageGeneration';
-import { generateTrendContent, inferCategorySlug } from '../services/trendContent';
->>>>>>> 4f9bdd2f7e6c3fb8485525e979e5075d25ea5991
+import { generateTrendContent, buildBasicContent, inferCategorySlug } from '../services/trendContent';
 import { classifyStatus } from '../services/scoring';
 
 /**
