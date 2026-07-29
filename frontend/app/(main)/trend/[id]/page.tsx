@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import StatusBadge from "@/components/StatusBadge";
 import TrendChart from "@/components/TrendChart";
 import TrendCard from "@/components/TrendCard";
+import BookmarkButton from "@/components/BookmarkButton";
 import { CATEGORY_LABELS } from "@/lib/trends";
 import { fetchTrendById, fetchTrends } from "@/lib/api";
 
@@ -73,16 +74,7 @@ export default async function TrendDetailPage({
             <span className="font-semibold text-dark">확산 지역</span>{" "}
             {trend.regionScope}
           </p>
-          <button className="flex w-fit items-center gap-2 rounded-full bg-strawberry px-5 py-2.5 font-button text-sm font-semibold text-white">
-            <Image
-              src="/generated/icons/bookmark-icon.png"
-              alt=""
-              width={16}
-              height={16}
-              className="object-contain brightness-0 invert"
-            />
-            즐겨찾기에 담기
-          </button>
+          <BookmarkButton trendId={trend.id} />
         </div>
       </div>
 

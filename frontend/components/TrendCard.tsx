@@ -1,11 +1,45 @@
 "use client";
 
+import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import StatusBadge from "./StatusBadge";
 import type { TrendItem } from "@/lib/trends";
+import { addBookmark, removeBookmark } from "@/lib/api";
 
-export default function TrendCard({ trend }: { trend: TrendItem }) {
+export default function TrendCard({
+  trend,
+  initialBookmarked = false,
+}: {
+  trend: TrendItem;
+  initialBookmarked?: boolean;
+}) {
+  const router = useRouter();
+  const [bookmarked, setBookmarked] = useState(initialBookmarked);
+  const [pending, setPending] = useState(false);
+
+  const handleBookmarkClick = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (pending) return;
+
+    setPending(true);
+    const next = !bookmarked;
+    try {
+      if (next) {
+        await addBookmark(trend.id);
+      } else {
+        await removeBookmark(trend.id);
+      }
+      setBookmarked(next);
+    } catch {
+      // 로그인 안 된 상태 등으로 실패하면 로그인 페이지로 안내
+      router.push("/login");
+    } finally {
+      setPending(false);
+    }
+  };
+
   return (
     <Link
       href={`/trend/${trend.id}`}
@@ -24,15 +58,16 @@ export default function TrendCard({ trend }: { trend: TrendItem }) {
         </span>
         <button
           aria-label="즐겨찾기"
-          onClick={(e) => e.preventDefault()}
-          className="absolute right-2 top-2 grid h-8 w-8 place-items-center rounded-full bg-white/90"
+          onClick={handleBookmarkClick}
+          disabled={pending}
+          className="absolute right-2 top-2 grid h-8 w-8 place-items-center rounded-full bg-white/90 disabled:opacity-60"
         >
           <Image
             src="/generated/icons/bookmark-icon.png"
             alt=""
             width={16}
             height={16}
-            className="object-contain"
+            className={`object-contain transition-opacity ${bookmarked ? "opacity-100" : "opacity-40"}`}
           />
         </button>
         <div className="absolute bottom-2 left-2">

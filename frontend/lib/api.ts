@@ -1,5 +1,6 @@
 import type { TrendStatus } from "@/components/StatusBadge";
 import type { CategorySlug, TrendItem } from "@/lib/trends";
+import { createClient } from "@/lib/supabase";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
@@ -74,7 +75,34 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
     throw new Error(body.error ?? `API 요청 실패: ${res.status}`);
   }
 
+  if (res.status === 204) {
+    return undefined as T;
+  }
+
   return res.json();
+}
+
+/**
+ * /api/users/* 는 전부 로그인이 필요해서, Supabase 세션의 access token을
+ * Authorization: Bearer 헤더로 실어 보낸다. 세션이 없으면 에러를 던진다.
+ */
+async function authFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  const supabase = createClient();
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+
+  if (!session) {
+    throw new Error("로그인이 필요합니다.");
+  }
+
+  return apiFetch<T>(path, {
+    ...init,
+    headers: {
+      Authorization: `Bearer ${session.access_token}`,
+      ...init?.headers,
+    },
+  });
 }
 
 export async function fetchTrends(params?: {
@@ -143,4 +171,135 @@ export async function fetchCategories(): Promise<CategoryOption[]> {
     slug: CATEGORY_SLUG_MAP[c.slug] ?? "dessert",
     sortOrder: c.sort_order,
   }));
+}
+
+export interface MyProfile {
+  id: string;
+  email: string | null;
+  storeName: string | null;
+  regionSi: string | null;
+  regionGu: string | null;
+  role: string;
+  categoryInterests: { id: number; name: string; slug: CategorySlug }[];
+}
+
+interface RawProfile {
+  id: string;
+  email: string | null;
+  store_name: string | null;
+  region_si: string | null;
+  region_gu: string | null;
+  role: string;
+}
+
+interface RawCategoryInterest {
+  id: number;
+  name: string;
+  slug: string;
+}
+
+function toMyProfile(
+  user: RawProfile,
+  categoryInterests: RawCategoryInterest[],
+): MyProfile {
+  return {
+    id: user.id,
+    email: user.email,
+    storeName: user.store_name,
+    regionSi: user.region_si,
+    regionGu: user.region_gu,
+    role: user.role,
+    categoryInterests: categoryInterests.map((c) => ({
+      id: c.id,
+      name: c.name,
+      slug: CATEGORY_SLUG_MAP[c.slug] ?? "dessert",
+    })),
+  };
+}
+
+/** GET /api/users/me : 로그인 상태면 프로필을, 아니면 null을 반환 */
+export async function fetchMyProfile(): Promise<MyProfile | null> {
+  try {
+    const { user, categoryInterests } = await authFetch<{
+      user: RawProfile;
+      categoryInterests: RawCategoryInterest[];
+    }>("/api/users/me");
+    return toMyProfile(user, categoryInterests);
+  } catch {
+    return null;
+  }
+}
+
+/** PATCH /api/users/me : 매장명·지역 수정 */
+export async function updateMyProfile(params: {
+  storeName?: string;
+  regionSi?: string;
+  regionGu?: string;
+}): Promise<void> {
+  await authFetch("/api/users/me", {
+    method: "PATCH",
+    body: JSON.stringify(params),
+  });
+}
+
+/** PUT /api/users/me/category-interests : 관심 카테고리 설정 */
+export async function updateMyCategoryInterests(
+  categorySlugs: CategorySlug[],
+): Promise<void> {
+  // 프론트 slug(drink) -> 백엔드 slug(beverage) 역매핑 후 categoryId를 찾아야 하므로
+  // 카테고리 목록을 함께 조회한다.
+  const categories = await fetchCategories();
+  const categoryIds = categorySlugs
+    .map((slug) => categories.find((c) => c.slug === slug)?.id)
+    .filter((id): id is number => typeof id === "number");
+
+  await authFetch("/api/users/me/category-interests", {
+    method: "PUT",
+    body: JSON.stringify({ categoryIds }),
+  });
+}
+
+export interface BookmarkedTrend {
+  id: string;
+  title: string;
+  summary: string | null;
+  status: string;
+  image: string;
+}
+
+/** GET /api/users/me/bookmarks : 즐겨찾기 목록 */
+export async function fetchMyBookmarks(): Promise<TrendItem[]> {
+  const { bookmarks } = await authFetch<{
+    bookmarks: {
+      id: number | string;
+      title: string;
+      summary: string | null;
+      status: string;
+      image_url: string | null;
+    }[];
+  }>("/api/users/me/bookmarks");
+
+  return bookmarks.map((b, index) => ({
+    id: String(b.id),
+    rank: index + 1,
+    title: b.title,
+    category: "dessert",
+    status: STATUS_MAP[b.status] ?? "태동기",
+    image: b.image_url || PLACEHOLDER_IMAGE,
+    searchGrowth: 0,
+    mentionGrowth: 0,
+    regionScope: "",
+    why: b.summary ? [b.summary] : [],
+    searchTrend: [],
+  }));
+}
+
+/** POST /api/users/me/bookmarks/:trendId : 즐겨찾기 추가 */
+export async function addBookmark(trendId: string): Promise<void> {
+  await authFetch(`/api/users/me/bookmarks/${trendId}`, { method: "POST" });
+}
+
+/** DELETE /api/users/me/bookmarks/:trendId : 즐겨찾기 해제 */
+export async function removeBookmark(trendId: string): Promise<void> {
+  await authFetch(`/api/users/me/bookmarks/${trendId}`, { method: "DELETE" });
 }
