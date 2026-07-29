@@ -40,13 +40,17 @@ if (authDisabled) {
 const adminGuard: RequestHandler[] = authDisabled ? [] : [requireAuth, requireAdmin];
 
 router.post('/trends', ...adminGuard, asyncHandler(createTrend));
-// '/trends/auto-refresh'는 '/trends/:id/publish'보다 먼저 선언해야 가려지지 않는다
+// '/trends/auto-refresh'는 '/trends/:id/publish'보다 먼저 선언해야 가려지지 않는다.
+//
+// 아래 /pipeline이 이 단계를 포함하므로 관리자 화면에서는 더 이상 직접 부르지 않는다.
+// 다만 "카드 갱신만" 따로 돌리고 싶을 때가 있어 엔드포인트는 남겨둔다.
 router.post('/trends/auto-refresh', ...adminGuard, asyncHandler(triggerAutoTrends));
 router.patch('/trends/:id/publish', ...adminGuard, asyncHandler(publishTrend));
 router.post('/keywords', ...adminGuard, asyncHandler(createKeyword));
 router.get('/keywords', ...adminGuard, asyncHandler(listKeywords));
 // '/keywords/rising'은 '/keywords/:id' 같은 동적 라우트보다 먼저 선언해야 가려지지 않는다
 router.get('/keywords/rising', ...adminGuard, asyncHandler(listRisingKeywords));
+// 마찬가지로 /pipeline에 포함된 단계. "발굴만" 따로 돌릴 때를 위해 남겨둔다
 router.post('/keywords/discover', ...adminGuard, asyncHandler(discoverKeywords));
 
 /**

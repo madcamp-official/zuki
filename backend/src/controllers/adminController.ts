@@ -178,6 +178,9 @@ export async function triggerPipeline(req: Request, res: Response) {
   const options = {
     discover: req.body?.discover !== false,
     youtube: req.body?.youtube === true,
+    // 지난 유행 발굴 — 회고 검색어를 정확도순으로 깊게 훑는다
+    archive: req.body?.archive === true,
+    pages: req.body?.pages ? Math.min(Math.max(Number(req.body.pages), 1), 10) : undefined,
     collect: req.body?.collect === true,
     autoRefresh: req.body?.autoRefresh === true,
     withImage: req.body?.withImage !== false,

@@ -2,9 +2,20 @@ import { query } from '../db/client';
 import {
   DiscoveredKeyword,
   DiscoveryResult,
+  NAVER_ARCHIVE_QUERIES,
+  NAVER_DISCOVERY_QUERIES,
   discoverFromNaver,
   discoverFromYoutube,
 } from '../services/keywordDiscovery';
+
+/**
+ * 아카이브 발굴은 최대 깊이로 판다.
+ *
+ * 회고 글은 애초에 드물어서 얕게 훑으면 몇 건 안 나온다. 33개 검색어 ×
+ * 10페이지 × 2코퍼스 = 660회로, 네이버 하루 한도(25,000)의 2.6%다.
+ * 자주 돌릴 일이 없는 작업이라 한 번에 최대로 캐는 게 낫다.
+ */
+const ARCHIVE_PAGES = 10;
 
 /**
  * 후보 키워드 발굴 배치.
@@ -18,6 +29,20 @@ export interface DiscoveryJobOptions {
   youtube?: boolean;
   blog?: boolean;
   cafe?: boolean;
+  /**
+   * 네이버 쿼리당 몇 페이지(100건)까지 볼지. 기본 5.
+   * 후보를 크게 늘리고 싶을 때 올린다 (최대 10, API의 start 상한 때문).
+   */
+  pages?: number;
+  /**
+   * 지난 유행 발굴 모드.
+   *
+   * 평소 발굴은 최신순으로 "지금 뜨는 것"을 찾는다. 그 방식으로는 이미 식은
+   * 메뉴가 구조적으로 안 잡힌다 — 지금 아무도 글을 안 쓰니까.
+   * 이 모드는 회고 검색어를 정확도순으로 깊게 훑어서, 오래전 글에 남아 있는
+   * 과거 유행 키워드를 캐낸다. 유튜브는 최근 30일만 보므로 의미가 없어 쓰지 않는다.
+   */
+  archive?: boolean;
 }
 
 export interface DiscoveryJobSummary {
@@ -33,7 +58,14 @@ export interface DiscoveryJobSummary {
 export async function runKeywordDiscovery(
   options: DiscoveryJobOptions = {}
 ): Promise<DiscoveryJobSummary> {
-  const { youtube = true, blog = true, cafe = true } = options;
+  const { blog = true, cafe = true, pages, archive = false } = options;
+  // 아카이브 모드는 오래된 글을 뒤지는 게 목적이라 유튜브(최근 30일)는 제외한다
+  const youtube = archive ? false : options.youtube !== false;
+
+  // 아카이브는 회고 검색어를 정확도순으로, 기본보다 깊게 훑는다
+  const queries = archive ? NAVER_ARCHIVE_QUERIES : NAVER_DISCOVERY_QUERIES;
+  const sort: 'date' | 'sim' = archive ? 'sim' : 'date';
+  const pageCount = pages ?? (archive ? ARCHIVE_PAGES : undefined);
 
   const discovered: DiscoveredKeyword[] = [];
   const errors: string[] = [];
@@ -60,8 +92,8 @@ export async function runKeywordDiscovery(
     }
   }
 
-  if (blog) await run('blog', () => discoverFromNaver('blog'));
-  if (cafe) await run('cafe', () => discoverFromNaver('cafearticle'));
+  if (blog) await run('blog', () => discoverFromNaver('blog', queries, pageCount, sort));
+  if (cafe) await run('cafe', () => discoverFromNaver('cafearticle', queries, pageCount, sort));
   if (youtube) await run('youtube', () => discoverFromYoutube());
 
   /**

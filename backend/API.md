@@ -606,9 +606,13 @@ https://bnghhjikybnoztaxjuey.supabase.co/storage/v1/object/public/trend-images/t
 |---|---|---|
 | `discover` | true | 후보 키워드 발굴 |
 | `youtube` | **false** | 발굴에 유튜브 포함. 505 unit 소모라 기본은 끔 |
+| `archive` | false | 지난 유행 발굴 모드 (아래 참고) |
+| `pages` | 5 | 네이버 쿼리당 페이지 수(1~10). 한 페이지 = 글 100건 |
 | `collect` | false | 네이버·유튜브 지표 수집 |
 | `autoRefresh` | false | 카드 생성·갱신. `remaining`이 0이 될 때까지 최대 8회 반복 |
 | `withImage` | true | AI 이미지 생성 (카드당 과금). 첫 회차에만 적용 |
+
+**`archive: true` — 지난 유행 발굴.** 평소 발굴은 최신순(`sort=date`)이라 구조적으로 지금 뜨는 것만 잡힙니다. 흑당버블티는 지금 아무도 글을 안 쓰기 때문입니다. 이 모드는 회고 검색어 32개를 **정확도순(`sort=sim`)으로 10페이지까지** 훑어 오래전 글에 남아 있는 과거 유행을 캐냅니다. 여기서 나온 키워드는 수집 후 검색량이 낮게 나와 하락기 카드가 됩니다. 유튜브는 최근 30일만 보므로 이 모드에서는 쓰지 않습니다.
 
 **응답은 `202`이고 작업은 백그라운드에서 이어집니다.** 수 분씩 걸리는데 외부 스케줄러는 보통 30초에서 끊기기 때문에, 동기로 처리하면 작업이 정상 완료돼도 실패로 기록됩니다.
 
@@ -637,8 +641,8 @@ https://bnghhjikybnoztaxjuey.supabase.co/storage/v1/object/public/trend-images/t
 
 | 스케줄 | 기본 주기 | 하는 일 | 환경변수 |
 |---|---|---|---|
-| 가벼운 발굴 | 2시간마다 | 네이버 블로그·카페 | `DISCOVER_CRON` |
-| 유튜브 포함 발굴 | 하루 4회 | 위 + 유튜브 검색 | `DISCOVER_YOUTUBE_CRON` |
+| 가벼운 발굴 | 1시간마다 | 네이버 블로그·카페 | `DISCOVER_CRON` |
+| 유튜브 포함 발굴 | 하루 2회 | 위 + 유튜브 검색 | `DISCOVER_YOUTUBE_CRON` |
 | 전체 실행 | 매일 04:00 | 발굴 + 수집 + 카드 갱신 | `PIPELINE_CRON` |
 
 단, Render 무료 플랜은 15분 무요청 시 슬립되어 cron이 뜨지 않습니다. 외부에서 `GET /health`를 10분마다 쳐서 깨워둬야 합니다(할당량 소모 없음). 자세한 건 README의 "파이프라인 자동화" 참고.

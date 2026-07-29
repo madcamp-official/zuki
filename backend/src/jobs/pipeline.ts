@@ -49,6 +49,13 @@ export interface PipelineOptions {
   discover?: boolean;
   /** 발굴에 유튜브를 포함할지. 505 unit 소모 */
   youtube?: boolean;
+  /** 네이버 쿼리당 페이지 수(1~10). 올릴수록 후보가 늘고 호출도 비례해 는다 */
+  pages?: number;
+  /**
+   * 지난 유행 발굴 모드. 회고 검색어를 정확도순으로 깊게 훑는다.
+   * 평소 발굴(최신순)로는 이미 식은 메뉴가 구조적으로 안 잡히기 때문에 필요하다.
+   */
+  archive?: boolean;
   collect?: boolean;
   autoRefresh?: boolean;
   /** 자동 갱신에서 AI 이미지를 생성할지 (카드당 과금) */
@@ -217,6 +224,8 @@ export async function runPipeline(
   const {
     discover = true,
     youtube = false,
+    pages,
+    archive = false,
     collect = false,
     autoRefresh = false,
     withImage = true,
@@ -256,11 +265,16 @@ export async function runPipeline(
   }
 
   try {
-    console.log(`[pipeline] 시작 (${trigger}) — 발굴=${discover} 유튜브=${youtube} 수집=${collect} 갱신=${autoRefresh}`);
+    console.log(
+      `[pipeline] 시작 (${trigger}) — 발굴=${discover}${archive ? '(지난유행)' : ''} ` +
+        `유튜브=${youtube} 수집=${collect} 갱신=${autoRefresh}`
+    );
 
     if (discover) {
       await stage('discover', async () => {
-        run.discovery = await runKeywordDiscovery({ youtube, blog: true, cafe: true });
+        run.discovery = await runKeywordDiscovery({
+          youtube, blog: true, cafe: true, pages, archive,
+        });
         run.errors.push(...run.discovery.errors);
       });
     }
@@ -323,8 +337,9 @@ export function schedulePipeline(): void {
 
   const tz = { timezone: 'Asia/Seoul' };
 
-  // 가벼운 발굴: 2시간마다, 네이버 블로그·카페만. 하루 12회 × 42호출 = 504회
-  const lightExpr = process.env.DISCOVER_CRON || '0 */2 * * *';
+  // 가벼운 발굴: 1시간마다, 네이버 블로그·카페만.
+  // 5페이지 × 21쿼리 × 2코퍼스 = 210회/실행, 하루 24회면 5,040회 (한도의 20%)
+  const lightExpr = process.env.DISCOVER_CRON || '0 * * * *';
   cron.schedule(
     lightExpr,
     () => {
