@@ -54,10 +54,43 @@ const MENU_PROMPT: Record<string, string> = {
     'Strawberry ribbon cake with soft whipped cream frosting, elegant ribbon decoration, pastel pink cream',
 };
 
+/** 이미지 프롬프트에 참고 자료로 넣을 실제 게시물 근거 (뉴스/블로그 제목+발췌) */
+export interface ImageEvidenceItem {
+  title: string;
+  excerpt: string;
+}
+
+/**
+ * 자동 발굴된 키워드("돼지게티", "씬쿠키" 같은 신조어)는 MENU_PROMPT에 없어서
+ * summary 한 줄만으로 GPT가 생김새를 상상해서 그리다 보니 엉뚱한 결과가 나온다.
+ *
+ * trendContent.ts가 이미 검색해둔 실제 뉴스/블로그 본문 발췌(evidence)를 함께
+ * 넘기면, "이 키워드가 실제로 어떤 음식인지" 원문에서 힌트를 얻어 더 정확하게
+ * 그릴 수 있다. 추가 검색 API 호출 없이 이미 가진 데이터를 재사용한다.
+ */
+function describeFromEvidence(
+  title: string,
+  evidence: ImageEvidenceItem[],
+): string | null {
+  if (evidence.length === 0) return null;
+
+  const excerpts = evidence
+    .slice(0, 3)
+    .map((e) => `- ${e.title}: ${e.excerpt}`)
+    .join('\n');
+
+  return (
+    `Reference material about "${title}" from real news/blog posts ` +
+    `(use this to understand what this actually looks like, ` +
+    `do not include any of this text in the image itself):\n${excerpts}`
+  );
+}
+
 export function buildTrendImagePrompt(
   title: string,
   categorySlug: string,
   summary: string | null,
+  evidence: ImageEvidenceItem[] = [],
 ): string {
   if (categorySlug === 'marketing') {
     const subject = MARKETING_SUBJECT[title] ?? `A cafe marketing prop related to "${title}"`;
@@ -71,7 +104,15 @@ export function buildTrendImagePrompt(
 
   const detail = summary && summary !== title ? summary : title;
   const kind = categorySlug === 'beverage' ? 'cafe beverage' : 'cafe dessert';
-  return `A ${kind} called "${title}" (${detail}), photographed as the main subject. ${COMMON_STYLE}`;
+  const reference = describeFromEvidence(title, evidence);
+
+  return [
+    `A ${kind} called "${title}" (${detail}), photographed as the main subject.`,
+    reference,
+    COMMON_STYLE,
+  ]
+    .filter(Boolean)
+    .join(' ');
 }
 
 let client: OpenAI | null = null;
@@ -129,8 +170,9 @@ export async function generateTrendImage(
   title: string,
   categorySlug: string,
   summary: string | null,
+  evidence: ImageEvidenceItem[] = [],
 ): Promise<string> {
-  const prompt = buildTrendImagePrompt(title, categorySlug, summary);
+  const prompt = buildTrendImagePrompt(title, categorySlug, summary, evidence);
 
   const result = await getClient().images.generate({
     model: 'gpt-image-1',

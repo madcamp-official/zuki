@@ -222,7 +222,16 @@ export async function refreshAutoTrends(
       // 이미지 생성은 호출당 과금이라 실패해도 카드 생성을 막지 않는다
       if (withImage) {
         try {
-          const url = await generateTrendImage(String(trend.id), c.keyword, categorySlug, content.summary);
+          // gatherEvidence()로 이미 확보해둔 실제 뉴스/블로그 발췌를 그대로
+          // 재사용한다 — "돼지게티" 같은 신조어도 원문에서 실제 생김새 힌트를
+          // 얻어 이미지를 더 정확하게 그릴 수 있다 (추가 API 호출 없음).
+          const url = await generateTrendImage(
+            String(trend.id),
+            c.keyword,
+            categorySlug,
+            content.summary,
+            content.evidence,
+          );
           await query(`UPDATE trends SET image_url = $1 WHERE id = $2`, [url, trend.id]);
         } catch (err) {
           console.warn(`[autoTrends] "${c.keyword}" 이미지 생성 실패:`, err);
