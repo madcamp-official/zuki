@@ -137,8 +137,14 @@ export async function fetchSeasonalCheck(keywords: string[]): Promise<SeasonalCh
     const lastYearIdx = points.length - 1 - 12;
     const lastYear = lastYearIdx >= 0 ? points[lastYearIdx].ratio : null;
 
+    /**
+     * 작년 지수가 거의 0이면 증감률이 폭주한다(실측: +116343%).
+     * 0.5는 사실상 "작년엔 아무도 안 찾았다"는 뜻이라 비율로 표현할 의미가 없다.
+     * 그런 키워드는 yoyGrowthRate 대신 "작년엔 없던 것"으로 읽어야 한다.
+     */
+    const MIN_BASELINE = 1;
     const yoyGrowthRate =
-      lastYear !== null && lastYear > 0
+      lastYear !== null && lastYear >= MIN_BASELINE
         ? Math.round(((thisYear - lastYear) / lastYear) * 1000) / 10
         : null;
 

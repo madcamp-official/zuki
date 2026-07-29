@@ -22,6 +22,7 @@
  */
 
 import { NaverSearchCorpus, searchNaver } from './naverSearch';
+import { discoverVideosByQuery } from './youtubeApi';
 
 /**
  * 디저트/음료의 "형태" — 제목에서 키워드를 골라내는 기준.
@@ -75,20 +76,49 @@ const REGION_PREFIXES = [
   '연남', '성수', '망원', '이태원', '건대', '신촌', '잠실', '해운대',
 ];
 
-/** 네이버 블로그·카페에서 검색할 쿼리 — 신상/유행 이야기가 모이는 표현 위주 */
+/**
+ * 네이버 블로그·카페에서 검색할 쿼리 — 신상/유행 이야기가 모이는 표현 위주.
+ *
+ * 편의점 신상을 포함하는 이유: 국내 디저트·음료 유행은 편의점에서 먼저
+ * 터지고 카페로 넘어오는 경우가 많다(두바이초콜릿이 대표적). 카페 쪽만
+ * 보면 이미 확산된 뒤에야 잡히므로, 선행 지표로 함께 훑는다.
+ */
 export const NAVER_DISCOVERY_QUERIES = [
   '카페 신메뉴',
   '요즘 유행 디저트',
   '신상 디저트',
   '베이커리 신상',
   '카페 신상 음료',
+  '편의점 신메뉴',
+  '편의점 신상 디저트',
 ];
+
+/**
+ * 유튜브 검색 쿼리. 쿼리당 101 unit이라 네이버(1회당 1건)보다 적게 쓴다.
+ * 4개 쿼리 = 404 unit (하루 10,000 중 4%).
+ */
+export const YOUTUBE_DISCOVERY_QUERIES = [
+  '카페 신메뉴',
+  '요즘 유행 디저트',
+  '신상 디저트 리뷰',
+  '편의점 신상',
+];
+
+/**
+ * 발굴 소스 — 교차 검증을 위해 개별로 구분한다.
+ *
+ * 어떤 소스도 편향이 있다. 블로그는 체험단·협찬이 많고, 카페글은 카페별로
+ * 연령대가 갈리며, 유튜브는 채널 구독자층이 다르다. 한 소스에서만 잡힌
+ * 키워드는 그 소스의 편향일 수 있으므로, 여러 소스에서 동시에 잡힌 것을
+ * 더 신뢰한다. 개인 카페·빵집 이름이 대개 블로그 한 곳에서만 나온다는
+ * 점에서 가게 이름 노이즈도 함께 걸러진다.
+ */
+export type DiscoverySource = 'blog' | 'cafe' | 'youtube';
 
 export interface DiscoveredKeyword {
   keyword: string;
-  /** 어디서 나왔는지 — 어느 소스가 잘 먹히는지 판단하는 근거 */
-  source: 'youtube' | 'naver';
-  /** 훑어본 제목들에서 몇 번 등장했는지. 태동기 판단의 핵심 신호 */
+  source: DiscoverySource;
+  /** 훑어본 제목들에서 몇 번 등장했는지 */
   mentionCount: number;
 }
 
@@ -156,7 +186,7 @@ export function normalizeKeyword(rawToken: string): string | null {
  */
 export function extractKeywordsFromTitles(
   titles: string[],
-  source: DiscoveredKeyword['source']
+  source: DiscoverySource
 ): DiscoveredKeyword[] {
   const counts = new Map<string, number>();
 
@@ -181,52 +211,31 @@ export function extractKeywordsFromTitles(
 }
 
 /**
- * 유튜브 인기 급상승 영상 제목에서 후보 키워드를 뽑는다.
- * 비용: videos.list 1회당 1 unit.
+ * 유튜브에서 주제 검색으로 후보 키워드를 뽑는다.
  *
- * 카테고리를 지정하면 YouTube가 거절하는 경우가 있어(mostPopular 차트 미지원 카테고리),
- * 카테고리 없는 전체 인기 영상을 먼저 확보해 최소한의 결과를 보장한다.
+ * 인기 급상승 차트(chart=mostPopular)는 1 unit으로 저렴하지만, 한국 유튜브
+ * 인기 차트는 음악·예능이 점령하고 있어 카페 디저트 키워드가 사실상 나오지
+ * 않는다(실측: 제목 157개에서 0개 추출).
  *
- * 다만 한국 유튜브 인기 급상승은 음악·예능이 대부분이라 카페 디저트 키워드가
- * 거의 나오지 않는다. 네이버 블로그/카페가 이 도메인에서는 훨씬 나은 소스다.
+ * 그래서 주제 쿼리로 직접 검색한다. 특정 채널을 골라 넣지 않는 이유는,
+ * 고르는 사람의 취향과 그 채널 구독자층의 편향이 그대로 들어가기 때문이다.
+ * 검색으로 매번 새로 뽑으면 지금 이 주제에서 조회수가 잘 나오는 영상이
+ * 자연스럽게 올라오고, 유행이 바뀌면 구성도 알아서 바뀐다.
+ *
+ * 비용: 쿼리당 101 unit. 기본 3개 쿼리 = 303 unit (하루 10,000 중 3%).
  */
 export async function discoverFromYoutube(
-  categoryIds: string[] = ['26', '24', '22'] // 26=Howto&Style, 24=Entertainment, 22=People&Blogs
+  queries: string[] = YOUTUBE_DISCOVERY_QUERIES
 ): Promise<DiscoveryResult> {
-  const apiKey = process.env.YOUTUBE_API_KEY;
-  if (!apiKey) {
-    throw new Error('YOUTUBE_API_KEY가 설정되지 않았습니다.');
-  }
-
   const titles: string[] = [];
   const attempts: DiscoveryAttempt[] = [];
 
-  async function fetchChart(categoryId?: string): Promise<void> {
-    const target = `youtube:${categoryId ?? 'all'}`;
-    const params = new URLSearchParams({
-      part: 'snippet',
-      chart: 'mostPopular',
-      regionCode: 'KR',
-      maxResults: '50',
-      key: apiKey!,
-    });
-    if (categoryId) params.set('videoCategoryId', categoryId);
-
+  for (const query of queries) {
+    const target = `youtube:${query}`;
     try {
-      const res = await fetch(`https://www.googleapis.com/youtube/v3/videos?${params}`);
-      if (!res.ok) {
-        attempts.push({
-          target,
-          ok: false,
-          count: 0,
-          error: `${res.status} ${(await res.text()).slice(0, 200)}`,
-        });
-        return;
-      }
-      const json = (await res.json()) as { items?: { snippet: { title: string } }[] };
-      const got = (json.items ?? []).map((i) => i.snippet.title);
-      titles.push(...got);
-      attempts.push({ target, ok: true, count: got.length });
+      const videos = await discoverVideosByQuery(query);
+      titles.push(...videos.map((v) => v.title));
+      attempts.push({ target, ok: true, count: videos.length });
     } catch (err) {
       attempts.push({
         target,
@@ -237,11 +246,6 @@ export async function discoverFromYoutube(
     }
   }
 
-  await fetchChart();
-  for (const categoryId of categoryIds) {
-    await fetchChart(categoryId);
-  }
-
   return {
     keywords: extractKeywordsFromTitles(titles, 'youtube'),
     titlesScanned: titles.length,
@@ -250,38 +254,38 @@ export async function discoverFromYoutube(
 }
 
 /**
- * 네이버 블로그·카페글 최신 포스트 제목에서 후보 키워드를 뽑는다.
+ * 네이버 블로그 또는 카페글에서 후보 키워드를 뽑는다.
  *
- * 검색 API는 하루 25,000회라 데이터랩(1,000회)과 별도로 여유롭게 쓸 수 있다.
- * 쿼리 5개 × 코퍼스 2개 = 10회 호출로 최대 1,000개 제목을 훑는다.
+ * 블로그와 카페를 한 번에 합치지 않고 코퍼스별로 따로 호출하는 이유는,
+ * 교차 검증을 하려면 "어느 소스에서 나왔는지"를 구분해야 하기 때문이다.
+ *
+ * 검색 API는 하루 25,000회라 데이터랩(1,000회)과 별도로 여유롭다.
  */
 export async function discoverFromNaver(
-  queries: string[] = NAVER_DISCOVERY_QUERIES,
-  corpora: NaverSearchCorpus[] = ['blog', 'cafearticle']
+  corpus: NaverSearchCorpus = 'blog',
+  queries: string[] = NAVER_DISCOVERY_QUERIES
 ): Promise<DiscoveryResult> {
   const titles: string[] = [];
   const attempts: DiscoveryAttempt[] = [];
 
-  for (const corpus of corpora) {
-    for (const query of queries) {
-      const target = `naver:${corpus}:${query}`;
-      try {
-        const result = await searchNaver(query, corpus, 100);
-        titles.push(...result.titles);
-        attempts.push({ target, ok: true, count: result.titles.length });
-      } catch (err) {
-        attempts.push({
-          target,
-          ok: false,
-          count: 0,
-          error: err instanceof Error ? err.message : String(err),
-        });
-      }
+  for (const query of queries) {
+    const target = `naver:${corpus}:${query}`;
+    try {
+      const result = await searchNaver(query, corpus, 100);
+      titles.push(...result.titles);
+      attempts.push({ target, ok: true, count: result.titles.length });
+    } catch (err) {
+      attempts.push({
+        target,
+        ok: false,
+        count: 0,
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 
   return {
-    keywords: extractKeywordsFromTitles(titles, 'naver'),
+    keywords: extractKeywordsFromTitles(titles, corpus === 'blog' ? 'blog' : 'cafe'),
     titlesScanned: titles.length,
     attempts,
   };
