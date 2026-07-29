@@ -13,9 +13,17 @@ const today = () => new Date().toISOString().slice(0, 10); // 'YYYY-MM-DD'
 
 /**
  * 유튜브 일일 할당량 10,000 unit / 키워드당 101 unit(search.list 100 + videos.list 1)
- * => 하루 최대 약 99개. 발굴(1 unit)과 여유분을 남겨 80개로 상한을 둔다.
+ *
+ * 하루 예산을 이렇게 나눈다:
+ *   수집(여기)      60개 × 101 = 6,060 unit
+ *   발굴            2회 × 505  = 1,010 unit   (pipeline.ts의 DISCOVER_YOUTUBE_CRON)
+ *   수동 실행 여유              = 2,930 unit
+ *
+ * 예전 값(80개)은 발굴이 1 unit짜리 인기차트를 쓰던 시절 기준이었다.
+ * 발굴이 검색(505 unit)으로 바뀌면서 8,080 + 2,020 = 10,100으로 한도를 넘겼고,
+ * 실제로 'Search Queries per day' 초과가 났다. 수집 쪽을 줄여 예산을 맞춘다.
  */
-const YOUTUBE_KEYWORD_LIMIT = Number(process.env.YOUTUBE_KEYWORD_LIMIT ?? 80);
+const YOUTUBE_KEYWORD_LIMIT = Number(process.env.YOUTUBE_KEYWORD_LIMIT ?? 60);
 
 /**
  * 네이버는 호출당 5개 × 하루 1,000회 = 5,000개까지 가능하지만,

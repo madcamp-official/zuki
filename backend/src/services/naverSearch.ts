@@ -40,6 +40,42 @@ export interface NaverSearchResult {
   total: number;
 }
 
+/**
+ * 호출 간격 제어 + 429 재시도.
+ *
+ * 네이버 검색 API에는 하루 25,000회와 **별개로 초당 호출 제한**이 있다.
+ * 발굴은 21개 쿼리를 쉬는 시간 없이 연달아 던지는데, 그러면 하루 한도의
+ * 0.2%밖에 안 쓰고도 `429 errorCode 012 (Rate limit exceeded)`가 난다.
+ * 실측에서 21회 중 1~2회가 이 이유로 실패했다.
+ *
+ * 두 겹으로 막는다:
+ *   1) 모든 호출을 하나의 큐로 직렬화하고 최소 간격을 둔다 (예방)
+ *   2) 그래도 429가 나면 간격을 늘려가며 재시도한다 (복구)
+ *
+ * 직렬화하는 이유는, 발굴·수집·근거수집이 동시에 돌 수 있어서 각자 delay를
+ * 걸어봐야 합쳐진 순간 부하는 제어되지 않기 때문이다.
+ */
+const MIN_INTERVAL_MS = Number(process.env.NAVER_SEARCH_INTERVAL_MS) || 120;
+const MAX_RETRIES = 3;
+
+let queueTail: Promise<unknown> = Promise.resolve();
+let lastCallAt = 0;
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** fn을 전역 큐에 넣어 최소 간격을 지키며 실행한다 */
+function schedule<T>(fn: () => Promise<T>): Promise<T> {
+  const result = queueTail.then(async () => {
+    const wait = MIN_INTERVAL_MS - (Date.now() - lastCallAt);
+    if (wait > 0) await sleep(wait);
+    lastCallAt = Date.now();
+    return fn();
+  });
+  // 큐는 성공/실패와 무관하게 이어져야 한다. 실패로 체인이 끊기면 이후 호출이 전부 막힌다
+  queueTail = result.catch(() => undefined);
+  return result;
+}
+
 /** 네이버 검색 결과 제목에는 <b> 강조 태그와 HTML 엔티티가 섞여 온다 */
 function stripHtml(s: string): string {
   return s
@@ -82,21 +118,40 @@ export async function searchNaver(
     sort,
   });
 
-  const res = await fetch(`${SEARCH_BASE}/${corpus}.json?${params}`, {
-    headers: {
-      'X-Naver-Client-Id': clientId,
-      'X-Naver-Client-Secret': clientSecret,
-    },
+  const json = await schedule(async () => {
+    for (let attempt = 0; ; attempt += 1) {
+      const res = await fetch(`${SEARCH_BASE}/${corpus}.json?${params}`, {
+        headers: {
+          'X-Naver-Client-Id': clientId,
+          'X-Naver-Client-Secret': clientSecret,
+        },
+      });
+
+      if (res.ok) {
+        return (await res.json()) as {
+          total?: number;
+          items?: { title: string; description?: string; link?: string; postdate?: string }[];
+        };
+      }
+
+      const body = (await res.text()).slice(0, 200);
+
+      // 429는 "잠깐 쉬었다 다시 오라"는 뜻이라 재시도할 가치가 있다.
+      // 401(키 문제)·400(쿼리 문제)은 다시 던져도 같은 결과라 즉시 실패시킨다.
+      if (res.status === 429 && attempt < MAX_RETRIES) {
+        const backoff = MIN_INTERVAL_MS * Math.pow(3, attempt + 1); // 360ms -> 1.1s -> 3.2s
+        console.warn(
+          `[naverSearch] 429 rate limit — ${backoff}ms 후 재시도 (${attempt + 1}/${MAX_RETRIES}) "${query}"`
+        );
+        await sleep(backoff);
+        lastCallAt = Date.now();
+        continue;
+      }
+
+      throw new Error(`네이버 ${corpus} 검색 오류: ${res.status} ${body}`);
+    }
   });
 
-  if (!res.ok) {
-    throw new Error(`네이버 ${corpus} 검색 오류: ${res.status} ${(await res.text()).slice(0, 200)}`);
-  }
-
-  const json = (await res.json()) as {
-    total?: number;
-    items?: { title: string; description?: string; link?: string; postdate?: string }[];
-  };
   const rawItems = json.items ?? [];
 
   const toIsoDate = (d?: string) =>
