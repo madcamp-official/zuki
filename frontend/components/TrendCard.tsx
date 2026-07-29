@@ -41,17 +41,18 @@ export default function TrendCard({ trend }: { trend: TrendItem }) {
       </div>
 
       <div className="flex flex-col gap-3 p-3.5">
-        <h3 className="truncate text-center text-sm font-bold text-dark">{trend.title}</h3>
-        <div className="flex justify-between border-t border-[#f7ede7] pt-2.5 text-[11px] text-gray-400">
+        <h3 className="truncate text-center text-base font-bold text-dark">{trend.title}</h3>
+        <div className="flex justify-between border-t border-[#f7ede7] pt-2.5 text-sm text-gray-400">
           <span>
             검색량{" "}
-            <b className="mt-0.5 block font-number text-base text-strawberry">
-              +{trend.searchGrowth}%
+            <b className="mt-0.5 block font-number text-lg text-strawberry">
+              {trend.searchGrowth >= 0 ? "+" : ""}
+              {trend.searchGrowth}%
             </b>
           </span>
           <span>
             언급량{" "}
-            <b className="mt-0.5 block font-number text-base text-strawberry">
+            <b className="mt-0.5 block font-number text-lg text-strawberry">
               {trend.mentionGrowth >= 0 ? "+" : ""}
               {trend.mentionGrowth}%
             </b>

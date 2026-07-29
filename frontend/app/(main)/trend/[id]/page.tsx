@@ -57,7 +57,8 @@ export default async function TrendDetailPage({
             <span>
               검색량{" "}
               <b className="font-number text-strawberry">
-                +{trend.searchGrowth}%
+                {trend.searchGrowth >= 0 ? "+" : ""}
+                {trend.searchGrowth}%
               </b>
             </span>
             <span>
