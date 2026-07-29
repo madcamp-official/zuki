@@ -379,6 +379,7 @@ npm run grant:admin -- someone@example.com editor    # editor 부여
   "summary": {
     "candidates": 180, "created": 60, "refreshed": 15,
     "enriched": 15, "remaining": 105,
+    "retired": 3, "restored": 1,
     "trends": [
       { "id": 41, "keyword": "씬쿠키", "signal": 88.2, "status": "rising", "rich": true }
     ],
@@ -388,6 +389,8 @@ npm run grant:admin -- someone@example.com editor    # editor 부여
 ```
 
 **한 번에 다 만들지 않습니다.** 매 실행마다 새 카드를 `maxNewCards`만큼만 만들고, 아직 카드가 없는 후보 수를 `remaining`으로 알려줍니다. **0이 될 때까지 여러 번 실행**하면 됩니다. 수백 개를 한 요청에 처리하면 HTTP가 먼저 끊기기 때문입니다.
+
+**기존 카드도 매번 다시 검사합니다.** 후보 조건은 새 카드만 거르기 때문에, 필터를 강화해도 그 전에 만들어진 카드는 화면에 남습니다. 그래서 실행 시작 시 전체 자동 카드에 교차검증(사람이 넣은 키워드가 아니면 소스 2곳 이상)을 다시 적용해 `retired`개를 내리고, 다시 조건을 만족하게 된 `restored`개를 되살립니다. 삭제가 아니라 `is_published` 토글이므로 다음 발굴에서 소스가 채워지면 카드가 저절로 돌아옵니다.
 
 **상위 카드에만 공을 들입니다.**
 

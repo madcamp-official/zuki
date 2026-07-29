@@ -48,6 +48,10 @@ export interface AutoTrendSummary {
   enriched: number;
   /** 아직 카드가 없는 후보 수. 0이 될 때까지 다시 실행하면 된다 */
   remaining: number;
+  /** 교차검증에 실패해 이번에 내린 자동 카드 수 */
+  retired: number;
+  /** 교차검증을 다시 통과해 이번에 되살린 자동 카드 수 */
+  restored: number;
   errors: { keyword: string; message: string }[];
   trends: {
     id: number;
@@ -144,6 +148,46 @@ const CANDIDATE_SQL = `
    ORDER BY trend_signal DESC, k.mention_count DESC
 `;
 
+/**
+ * 이미 만들어진 자동 카드에도 교차검증을 다시 적용한다.
+ *
+ * CANDIDATE_SQL의 WHERE 절은 **새로 만들 카드**만 거른다. 필터를 강화하기
+ * 전에 만들어진 카드는 그대로 남아서, 규칙을 바꿔도 화면에는 옛날 노이즈가
+ * 계속 보인다 (돼지게티=라면, 마티에부산하버시티=호텔 등).
+ *
+ * 그래서 매 실행마다 전체 자동 카드를 다시 검사한다. 규칙은 딱 하나 —
+ * 사람이 직접 넣은 키워드가 아니면 2개 이상의 소스에서 잡혀야 한다.
+ *
+ * 삭제가 아니라 is_published 토글인 이유:
+ *   - sources[]는 발굴이 돌 때마다 채워진다. 지금 1개여도 다음 발굴에서
+ *     2개가 될 수 있고, 그때 카드가 저절로 되살아나야 한다.
+ *   - 카드를 지우면 trend_id 연결과 점수 이력까지 날아간다.
+ * 그래서 내리기와 되살리기를 한 쌍으로 둔다.
+ */
+async function revalidateAutoTrends(minSources: number) {
+  const VALID = `(k.source = 'editor' OR COALESCE(array_length(k.sources, 1), 0) >= $1)`;
+
+  const retired = await query<{ id: number }>(
+    `UPDATE trends t SET is_published = false, updated_at = now()
+       FROM keywords k
+      WHERE k.trend_id = t.id AND t.is_auto = true AND t.is_published = true
+        AND NOT ${VALID}
+      RETURNING t.id`,
+    [minSources]
+  );
+
+  const restored = await query<{ id: number }>(
+    `UPDATE trends t SET is_published = true, updated_at = now()
+       FROM keywords k
+      WHERE k.trend_id = t.id AND t.is_auto = true AND t.is_published = false
+        AND ${VALID}
+      RETURNING t.id`,
+    [minSources]
+  );
+
+  return { retired: retired.length, restored: restored.length };
+}
+
 export interface AutoTrendOptions {
   /** 이번 실행에서 새로 만들 카드 수 상한. 요청이 끊기지 않을 만큼만 */
   maxNewCards?: number;
@@ -188,9 +232,16 @@ export async function refreshAutoTrends(
     refreshed: 0,
     enriched: 0,
     remaining: 0,
+    retired: 0,
+    restored: 0,
     errors: [],
     trends: [],
   };
+
+  // 새 카드를 만들기 전에 기존 카드부터 현재 규칙으로 다시 검사한다
+  const revalidated = await revalidateAutoTrends(minSources);
+  summary.retired = revalidated.retired;
+  summary.restored = revalidated.restored;
 
   const candidates = await query<Candidate>(CANDIDATE_SQL, [minIndex, minMentions, minSources]);
   summary.candidates = candidates.length;
@@ -319,7 +370,8 @@ export async function refreshAutoTrends(
 
   console.log(
     `[autoTrends] 완료: 생성 ${summary.created} / 갱신 ${summary.refreshed} / ` +
-      `상세생성 ${summary.enriched} / 남은 후보 ${summary.remaining}`
+      `상세생성 ${summary.enriched} / 내림 ${summary.retired} / 되살림 ${summary.restored} / ` +
+      `남은 후보 ${summary.remaining}`
   );
   return summary;
 }

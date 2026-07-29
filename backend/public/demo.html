@@ -793,7 +793,8 @@ async function runAutoTrends() {
         </div>
         <div style="font-size:13px;color:var(--muted)">
           후보 ${sm.candidates ?? 0}개 중 · 이번에 생성 ${sm.created ?? 0} · 갱신 ${sm.refreshed ?? 0} ·
-          상세(근거+이미지) ${sm.enriched ?? 0}${(sm.errors || []).length ? ` · 실패 ${sm.errors.length}` : ''}
+          상세(근거+이미지) ${sm.enriched ?? 0} ·
+          교차검증 실패로 내림 ${sm.retired ?? 0} · 되살림 ${sm.restored ?? 0}${(sm.errors || []).length ? ` · 실패 ${sm.errors.length}` : ''}
         </div>
       </div>`;
 

@@ -30,19 +30,43 @@ import { discoverVideosByQuery } from './youtubeApi';
  * 음식/음료로 보이는 것만 추려내는 필터로 쓴다.
  */
 const FORMS = [
-  '라떼', '아메리카노', '에이드', '스무디', '프라페', '주스', '쉐이크', '티',
+  '라떼', '아메리카노', '에이드', '스무디', '프라페', '주스', '쉐이크',
   '케이크', '롤케이크', '치즈케이크', '타르트', '마카롱', '쿠키', '스콘',
   '크루아상', '크로플', '베이글', '도넛', '마들렌', '휘낭시에', '푸딩',
   '빵', '토스트', '파이', '무스', '젤라또', '아이스크림', '빙수', '초콜릿',
   '소보로', '단팥', '슈크림', '와플', '팬케이크', '브라우니', '몽블랑',
+  // 차(茶)는 '티' 한 글자로 받으면 안 된다. 아래 NON_FORM_ENDINGS 주석 참고.
+  '밀크티', '블랙티', '그린티', '허브티', '버블티', '레몬티', '홍차', '녹차', '말차',
 ];
 
 /**
- * 짧고 흔한 형태 단어는 가게 이름에도 자주 쓰인다(천하제빵, 더벤티, 탄티).
+ * 짧고 흔한 형태 단어는 가게 이름에도 자주 쓰인다(천하제빵, 더벤티).
  * 이런 형태로 끝나는 토큰은 앞부분이 충분히 길 때만 인정한다.
  */
-const SHORT_FORMS = new Set(['티', '빵', '파이', '무스']);
+const SHORT_FORMS = new Set(['빵', '파이', '무스']);
 const MIN_PREFIX_FOR_SHORT_FORM = 2;
+
+/** 앞말 없이 단독으로도 완결된 메뉴 이름인 형태 단어 */
+const STANDALONE_FORMS = new Set([
+  '밀크티', '버블티', '홍차', '녹차', '말차', '아메리카노', '젤라또', '빙수',
+]);
+
+/**
+ * 형태 단어로 끝나 보이지만 카페 메뉴가 아닌 것들.
+ *
+ * '티'를 형태 단어에서 뺀 이유가 여기 있다. 한 글자라 앞말 길이 제한으로는
+ * 못 막는데, 실제로 이렇게 새어 들어왔다:
+ *   돼지게티(라면), 마티에부산하버시티(호텔), 핏제리아디토티(피자집)
+ * 셋 다 '티' 앞이 2자를 훌쩍 넘어서 기존 규칙을 통과했다.
+ * 그래서 '티'는 버리고 밀크티·블랙티처럼 차를 가리키는 게 확실한 조합만 FORMS에 넣었다.
+ *
+ * 아래 목록은 그 밖의 비(非)디저트 어미다. '편의점 신메뉴'를 검색어에 넣은 뒤로
+ * 라면·간편식이 같이 딸려 오기 때문에 필요하다.
+ */
+const NON_FORM_ENDINGS = [
+  '게티', '라면', '짜장', '짬뽕', '우동', '국수', '도시락', '볶음밥', '김밥',
+  '시티', '호텔', '리조트', '스테이', '아파트', '오피스텔',
+];
 
 /**
  * 마케팅 카테고리의 "형태".
@@ -194,6 +218,8 @@ export function normalizeKeyword(rawToken: string): string | null {
   if (token.length < 2 || token.length > 20) return null;
   if (STOPWORDS.has(token)) return null;
   if (BRAND_NAMES.has(token)) return null;
+  // 마케팅 분기보다 먼저 검사한다. 어느 경로로도 통과하면 안 되는 어미다.
+  if (NON_FORM_ENDINGS.some((e) => token.endsWith(e))) return null;
 
   // '창원소금빵' -> '소금빵' : 지역명은 메뉴 이름의 일부가 아니다
   for (const region of REGION_PREFIXES) {
@@ -215,6 +241,10 @@ export function normalizeKeyword(rawToken: string): string | null {
     (f) => token.endsWith(f) && token.length - f.length >= MIN_PREFIX_FOR_MARKETING
   );
   if (marketingSuffix) return token;
+
+  // 형태 단어는 원칙적으로 앞말이 있어야 한다 ('빵' X, '소금빵' O).
+  // 다만 차 종류는 그 자체가 완결된 메뉴 이름이라 단독으로도 인정한다.
+  if (STANDALONE_FORMS.has(token)) return token;
 
   const form = FORMS.find((f) => token.endsWith(f) && token.length > f.length);
   if (!form) return null;
