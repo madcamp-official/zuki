@@ -1,4 +1,5 @@
 import cron from 'node-cron';
+import { query } from '../db/client';
 import { runKeywordDiscovery, DiscoveryJobSummary } from './discoverKeywords';
 import { runDailyCollect } from './dailyCollect';
 import { refreshAutoTrends, AutoTrendSummary } from './autoTrends';
@@ -69,6 +70,104 @@ export interface PipelineRun {
 }
 
 /**
+ * 실행 기록을 DB에 남긴다.
+ *
+ * 왜 메모리만으로는 안 되나: Render 무료 플랜은 15분 무요청이면 프로세스를
+ * 내리고, 재배포할 때도 새로 뜬다. 그러면 "방금 뭐가 돌았는지"가 통째로
+ * 사라져서, 실행은 정상이었는데 화면에는 null이 뜬다. 실패로 오인하기 쉽다.
+ *
+ * 기록 실패가 파이프라인을 멈추면 안 되므로 오류는 로그만 남기고 삼킨다.
+ * 배치를 돌리는 게 목적이지 기록을 남기는 게 목적이 아니다.
+ */
+async function insertRunRow(run: PipelineRun): Promise<number | null> {
+  try {
+    const rows = await query<{ id: number }>(
+      `INSERT INTO pipeline_runs (trigger, status, stage, started_at)
+       VALUES ($1, 'running', NULL, $2) RETURNING id`,
+      [run.trigger.slice(0, 40), run.startedAt]
+    );
+    return rows[0]?.id ?? null;
+  } catch (err) {
+    console.warn('[pipeline] 실행 기록 생성 실패:', err);
+    return null;
+  }
+}
+
+async function updateRunRow(id: number | null, run: PipelineRun, done: boolean) {
+  if (id === null) return;
+  try {
+    // 단계가 하나라도 실패했지만 나머지는 돌았으면 'partial'.
+    // 아무 결과도 못 얻었으면 'failed'.
+    const gotSomething = !!(run.discovery || run.collect || run.autoTrends);
+    const status = !done
+      ? 'running'
+      : run.errors.length === 0
+        ? 'success'
+        : gotSomething
+          ? 'partial'
+          : 'failed';
+
+    await query(
+      `UPDATE pipeline_runs
+          SET status = $2, stage = $3, finished_at = $4, summary = $5::jsonb
+        WHERE id = $1`,
+      [
+        id,
+        status,
+        run.currentStage,
+        run.finishedAt,
+        JSON.stringify({
+          discovery: run.discovery,
+          collect: run.collect,
+          autoTrends: run.autoTrends,
+          errors: run.errors,
+        }),
+      ]
+    );
+  } catch (err) {
+    console.warn('[pipeline] 실행 기록 갱신 실패:', err);
+  }
+}
+
+/** DB에 남은 마지막 실행을 PipelineRun 형태로 복원한다 */
+async function loadLastRunFromDb(): Promise<PipelineRun | null> {
+  try {
+    const rows = await query<{
+      trigger: string;
+      status: string;
+      stage: Stage | null;
+      started_at: string;
+      finished_at: string | null;
+      summary: {
+        discovery?: DiscoveryJobSummary | null;
+        collect?: PipelineRun['collect'];
+        autoTrends?: AutoTrendSummary | null;
+        errors?: string[];
+      };
+    }>(
+      `SELECT trigger, status, stage, started_at, finished_at, summary
+         FROM pipeline_runs ORDER BY started_at DESC LIMIT 1`
+    );
+    const r = rows[0];
+    if (!r) return null;
+
+    return {
+      trigger: r.trigger,
+      startedAt: new Date(r.started_at).toISOString(),
+      finishedAt: r.finished_at ? new Date(r.finished_at).toISOString() : null,
+      currentStage: r.stage,
+      discovery: r.summary?.discovery ?? null,
+      collect: r.summary?.collect ?? null,
+      autoTrends: r.summary?.autoTrends ?? null,
+      errors: r.summary?.errors ?? [],
+    };
+  } catch (err) {
+    console.warn('[pipeline] 실행 기록 조회 실패:', err);
+    return null;
+  }
+}
+
+/**
  * 자동 갱신 반복 상한.
  * 무한 루프를 막는 안전장치다. 회차당 최대 60장이니 8회면 480장까지 커버된다.
  */
@@ -77,9 +176,26 @@ const MAX_AUTO_REFRESH_ROUNDS = 8;
 let running = false;
 let lastRun: PipelineRun | null = null;
 
-/** 마지막(또는 진행 중인) 실행 상태. 데모 페이지가 폴링해서 보여준다 */
-export function getPipelineStatus(): { running: boolean; lastRun: PipelineRun | null } {
-  return { running, lastRun };
+/**
+ * 마지막(또는 진행 중인) 실행 상태. 데모 페이지가 폴링해서 보여준다.
+ *
+ * 메모리에 없으면 DB에서 읽는다. 프로세스가 재시작된 직후에도 직전 실행이
+ * 보여야 하기 때문이다.
+ *
+ * running은 DB가 아니라 메모리 값을 쓴다. DB의 'running' 상태는 프로세스가
+ * 도중에 죽으면 영원히 남아 새 실행을 막아버린다. 실제로 지금 이 프로세스가
+ * 돌리고 있는지는 메모리만이 안다.
+ */
+export async function getPipelineStatus(): Promise<{
+  running: boolean;
+  lastRun: PipelineRun | null;
+}> {
+  return { running, lastRun: lastRun ?? (await loadLastRunFromDb()) };
+}
+
+/** 중복 실행 검사용. DB를 건드리지 않아 동기로 쓸 수 있다 */
+export function isPipelineRunning(): boolean {
+  return running;
 }
 
 /**
@@ -120,6 +236,7 @@ export async function runPipeline(
     errors: [],
   };
   lastRun = run;
+  const rowId = await insertRunRow(run);
 
   /**
    * 한 단계가 실패해도 다음 단계는 시도한다.
@@ -134,6 +251,8 @@ export async function runPipeline(
       console.error(`[pipeline] ${name} 실패:`, message);
       run.errors.push(`${name}: ${message}`);
     }
+    // 단계가 끝날 때마다 기록한다. 도중에 프로세스가 죽어도 어디까지 갔는지 남는다
+    await updateRunRow(rowId, run, false);
   }
 
   try {
@@ -177,6 +296,7 @@ export async function runPipeline(
     run.currentStage = null;
     run.finishedAt = new Date().toISOString();
     running = false;
+    await updateRunRow(rowId, run, true);
   }
 
   console.log(`[pipeline] 종료 (${trigger})${run.errors.length ? ` — 오류 ${run.errors.length}건` : ''}`);

@@ -4,7 +4,7 @@ import { ApiError } from '../middlewares/errorHandler';
 import { runDailyCollect } from '../jobs/dailyCollect';
 import { refreshAutoTrends } from '../jobs/autoTrends';
 import { runKeywordDiscovery } from '../jobs/discoverKeywords';
-import { getPipelineStatus, runPipeline } from '../jobs/pipeline';
+import { getPipelineStatus, isPipelineRunning, runPipeline } from '../jobs/pipeline';
 import { generateTrendImage } from '../services/imageGeneration';
 
 
@@ -170,8 +170,8 @@ export async function discoverKeywords(req: Request, res: Response) {
  * 외부 스케줄러는 x-collect-secret, 데모 페이지는 로그인 토큰을 쓴다.
  */
 export async function triggerPipeline(req: Request, res: Response) {
-  if (getPipelineStatus().running) {
-    res.status(409).json({ message: '이미 실행 중입니다.', status: getPipelineStatus() });
+  if (isPipelineRunning()) {
+    res.status(409).json({ message: '이미 실행 중입니다.', status: await getPipelineStatus() });
     return;
   }
 
@@ -196,9 +196,12 @@ export async function triggerPipeline(req: Request, res: Response) {
   });
 }
 
-/** GET /api/admin/pipeline — 진행 중이거나 마지막으로 끝난 실행 상태 */
+/**
+ * GET /api/admin/pipeline — 진행 중이거나 마지막으로 끝난 실행 상태.
+ * 메모리에 없으면 DB에서 읽으므로 재배포·슬립 후에도 직전 실행이 보인다.
+ */
 export async function getPipeline(_req: Request, res: Response) {
-  res.json(getPipelineStatus());
+  res.json(await getPipelineStatus());
 }
 
 /**
