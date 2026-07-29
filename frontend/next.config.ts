@@ -11,6 +11,12 @@ const nextConfig: NextConfig = {
         hostname: "images.unsplash.com",
         pathname: "/**",
       },
+      {
+        // 백엔드가 AI로 생성한 트렌드 이미지를 올리는 Supabase Storage 공개 버킷
+        protocol: "https",
+        hostname: "*.supabase.co",
+        pathname: "/storage/v1/object/public/**",
+      },
     ],
   },
 };
