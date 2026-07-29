@@ -54,14 +54,20 @@ function stripHtml(s: string): string {
 }
 
 /**
- * 한 코퍼스에서 검색어 하나로 최신 글 제목을 가져온다.
- * sort=date(최신순)를 쓰는 이유: 트렌드 발굴이 목적이라 정확도보다 신선도가 중요.
+ * 한 코퍼스에서 검색어로 글을 가져온다.
+ *
+ * 정렬 기본값이 용도에 따라 다르다:
+ *   - 블로그/카페 (date, 최신순): 트렌드 발굴·게시량 측정이 목적이라 신선도가 중요
+ *   - 뉴스 (sim, 정확도순): "왜 뜨는지" 배경을 찾는 게 목적이라 관련성이 중요.
+ *     최신순으로 뽑으면 키워드가 본문에 스치기만 한 무관한 기사가 올라온다
+ *     (실측: '씬쿠키' 검색에 "F1 최고 미남 샤를 르클레르의 피앙세는?" 기사가 걸림)
  */
 export async function searchNaver(
   query: string,
   corpus: NaverSearchCorpus = 'blog',
   display = 100,
-  start = 1
+  start = 1,
+  sort: 'date' | 'sim' = corpus === 'news' ? 'sim' : 'date'
 ): Promise<NaverSearchResult> {
   const clientId = process.env.NAVER_CLIENT_ID;
   const clientSecret = process.env.NAVER_CLIENT_SECRET;
@@ -73,7 +79,7 @@ export async function searchNaver(
     query,
     display: String(Math.min(display, 100)), // API 상한 100
     start: String(Math.min(Math.max(start, 1), 1000)), // API 상한 1000
-    sort: 'date',
+    sort,
   });
 
   const res = await fetch(`${SEARCH_BASE}/${corpus}.json?${params}`, {
@@ -164,7 +170,8 @@ export async function measureMentionTrend(
     const start = page * 100 + 1;
     if (start > 1000) break; // API 상한
 
-    const result = await searchNaver(keyword, 'blog', 100, start);
+    // 게시 날짜를 세는 게 목적이라 반드시 최신순이어야 한다
+    const result = await searchNaver(keyword, 'blog', 100, start, 'date');
     apiCalls += 1;
     dates.push(...result.postDates);
 

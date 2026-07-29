@@ -29,16 +29,27 @@
 
 export type TrendStatus = 'emerging' | 'rising' | 'peak' | 'declining';
 
-/** 확산 단계 판정 기준값 — 데이터가 쌓이면 보정 예정 */
+/**
+ * 확산 단계 판정 기준값.
+ *
+ * 실측에 맞춰 낮췄다. 네이버 검색지수는 요청한 키워드 묶음 안에서 최댓값을
+ * 100으로 잡는 상대값이라, 우리가 감시하는 신생 디저트 키워드는 대부분
+ * 30 미만으로 나온다. 원래 기준(highLevel 60 / lowLevel 30)이면 거의 전부
+ * 'emerging'으로 몰려서 하락기 카드가 만들어지지 않았다.
+ */
 export const STATUS_THRESHOLDS = {
   /** 이 이상이면 "큰 트렌드"로 간주 */
-  highLevel: 60,
+  highLevel: 40,
   /** 이 미만이면 아직 미미한 수준 */
-  lowLevel: 30,
+  lowLevel: 15,
+  /** 하락 판정을 하기 위한 최소 규모. 아무도 안 찾던 게 더 준 건 의미 없다 */
+  minLevelForDecline: 5,
   /** 이 이상 오르면 상승 중 */
   risingMomentum: 15,
   /** 이 이하로 떨어지면 하락 중 */
   decliningMomentum: -15,
+  /** 이 이상 급등 중이면 규모가 커도 아직 '상승기'로 본다 (전성기는 정체 상태) */
+  surgingMomentum: 50,
 };
 
 export interface TrendSignals {
@@ -67,7 +78,10 @@ export function classifyStatus(signals: TrendSignals): TrendStatus {
 
   // 네이버가 주 신호. 없으면 유튜브 모멘텀으로 대체
   const momentum = searchMomentum ?? youtubeMomentum;
-  const { highLevel, lowLevel, risingMomentum, decliningMomentum } = STATUS_THRESHOLDS;
+  const {
+    highLevel, lowLevel, minLevelForDecline,
+    risingMomentum, decliningMomentum, surgingMomentum,
+  } = STATUS_THRESHOLDS;
 
   // 수준을 모르는 단계(첫 수집 전)에는 모멘텀만으로 임시 판정
   if (searchLevel === null) {
@@ -77,17 +91,28 @@ export function classifyStatus(signals: TrendSignals): TrendStatus {
     return 'emerging';
   }
 
-  // 아직 검색량 자체가 미미하면 무조건 태동기
-  // (밑바닥에서의 증감률 폭등은 통계적으로 의미가 약하다)
+  // 하락 판정을 먼저 한다.
+  // 규모 조건을 lowLevel(15)이 아니라 minLevelForDecline(5)로 낮춘 이유:
+  // 한때 유행했다가 식은 메뉴는 지금 검색지수가 이미 많이 떨어져 있다.
+  // lowLevel 기준을 쓰면 그런 것들이 전부 '태동기'로 잘못 분류된다.
+  if (
+    momentum !== null &&
+    momentum <= decliningMomentum &&
+    searchLevel >= minLevelForDecline
+  ) {
+    return 'declining';
+  }
+
+  // 검색량 자체가 미미하면 태동기
   if (searchLevel < lowLevel) return 'emerging';
 
-  // 수준이 있는데 뚜렷이 꺾이면 하락기
-  if (momentum !== null && momentum <= decliningMomentum) return 'declining';
+  // 규모가 커도 아직 급등 중이면 전성기가 아니라 상승기다.
+  // 전성기는 "이미 높은 수준에서 정체"를 뜻한다.
+  if (momentum !== null && momentum >= surgingMomentum) return 'rising';
 
-  // 큰 트렌드는 정체든 상승이든 전성기
+  // 큰 트렌드가 정체 중이면 전성기
   if (searchLevel >= highLevel) return 'peak';
 
-  // 중간 수준 = 올라가는 중
   return 'rising';
 }
 

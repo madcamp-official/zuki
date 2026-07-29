@@ -377,14 +377,18 @@ export async function listRisingKeywords(req: Request, res: Response) {
  * 에디터가 직접 만든 카드(is_auto=false)의 문구는 덮어쓰지 않는다.
  */
 export async function triggerAutoTrends(req: Request, res: Response) {
-  const topN = Math.min(Number(req.body?.topN ?? 10), 30);
-  const minSignal = Number(req.body?.minSignal ?? 40);
-  // 이미지 생성은 호출당 과금이라 기본은 켜두되 끌 수 있게 한다
-  const withImage = req.body?.withImage !== false;
-  // 시드 더미를 걷어내고 실제 수집 데이터만 보이게 할 때 사용. 기본은 안전하게 false
-  const retireManual = req.body?.retireManual === true;
-
-  const summary = await refreshAutoTrends(topN, minSignal, withImage, retireManual);
+  const summary = await refreshAutoTrends({
+    // 한 번에 다 만들지 않는다. 요청이 끊기지 않을 만큼만 처리하고,
+    // 남은 개수(remaining)를 응답에 담아 다시 실행할 수 있게 한다.
+    maxNewCards: Math.min(Number(req.body?.maxNewCards ?? 60), 200),
+    // 근거 수집 + LLM 문구 + AI 이미지를 붙일 상위 카드 수 (카드당 과금)
+    richCount: Math.min(Number(req.body?.richCount ?? 15), 50),
+    minIndex: Number(req.body?.minIndex ?? 5),
+    minMentions: Number(req.body?.minMentions ?? 2),
+    withImage: req.body?.withImage !== false,
+    // 시드 더미를 걷어내고 실제 수집 데이터만 보이게 할 때 사용. 기본은 안전하게 false
+    retireManual: req.body?.retireManual === true,
+  });
   res.json({ summary });
 }
 

@@ -132,11 +132,18 @@ export async function generateTrendImage(
 ): Promise<string> {
   const prompt = buildTrendImagePrompt(title, categorySlug, summary);
 
+  /**
+   * 모델·품질은 환경변수로 조정 가능. 장당 대략 비용(1024x1024, medium 기준):
+   *   gpt-image-1       $0.042   (2026-10-23 지원 종료 예정)
+   *   gpt-image-1.5     $0.034
+   *   gpt-image-1-mini  $0.011
+   * 카드 10개 생성 시 $0.11 ~ $0.42 수준이다.
+   */
   const result = await getClient().images.generate({
-    model: 'gpt-image-1',
+    model: process.env.OPENAI_IMAGE_MODEL ?? 'gpt-image-1',
     prompt,
     size: '1024x1024',
-    quality: 'medium',
+    quality: (process.env.OPENAI_IMAGE_QUALITY ?? 'medium') as 'low' | 'medium' | 'high',
     n: 1,
   });
 

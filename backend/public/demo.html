@@ -312,8 +312,12 @@
     <div class="card" style="border-color: var(--accent)">
       <h2><span class="method">POST</span>/api/admin/trends/auto-refresh — 상위 트렌드 자동 갱신</h2>
       <p class="hint">
-        급상승 후보 중 신호가 강한 것들을 <strong>트렌드 카드로 자동 생성</strong>하고, 순위에서 밀린 자동 카드는 내립니다.
-        직접 카드를 만들 필요 없이 항상 최신 상위 N개가 노출됩니다.<br /><br />
+        수집한 키워드를 <strong>트렌드 카드로 자동 생성</strong>합니다. 카드는 감시 중인 디저트 전체의 카탈로그이고,
+        확산 단계(태동기/상승기/전성기/하락기)로 나뉩니다. 홈에 뭘 보여줄지는 프론트가 <code>sort=score&amp;limit=10</code>으로 고릅니다.<br /><br />
+        <strong>한 번에 다 만들지 않습니다.</strong> 매 실행마다 새 카드를 상한만큼만 만들고 남은 개수를 <code>remaining</code>으로 알려줍니다.
+        0이 될 때까지 여러 번 누르면 됩니다(요청이 끊기는 걸 막기 위함).<br /><br />
+        <strong>상위 카드에만 공을 들입니다.</strong> 상위 N개는 뉴스·블로그를 검색해 근거 기반 문구 + AI 이미지를 붙이고(카드당 과금),
+        나머지는 측정값 기반 문구만 붙입니다(즉시, 무료).<br /><br />
         <strong>문구는 지어내지 않습니다.</strong> 각 키워드로 네이버 뉴스·블로그를 검색해 실제 게시물을 읽고,
         그 안에 있는 내용과 우리가 측정한 수치만으로 요약을 씁니다. 근거가 된 게시물 링크는 카드에 함께 저장돼서
         사장님이 원문을 확인할 수 있습니다. 게시물에 원인이 안 나오면 원인을 추측하지 않고 지표만 서술합니다.<br /><br />
@@ -322,8 +326,8 @@
         자동 카드가 하나도 안 만들어졌다면 사이트가 비지 않도록 내리지 않습니다).
       </p>
       <div class="row">
-        <div><label>유지할 카드 수</label><input id="atTopN" type="number" value="10" min="1" max="30" /></div>
-        <div><label>최소 신호 점수</label><input id="atMinSignal" type="number" value="40" min="0" max="100" /></div>
+        <div><label>이번에 만들 카드 수</label><input id="atMaxNew" type="number" value="60" min="1" max="200" /></div>
+        <div><label>상세 생성 상위 N (과금)</label><input id="atRichCount" type="number" value="15" min="0" max="50" /></div>
         <div>
           <label>AI 이미지 생성</label>
           <select id="atWithImage">
@@ -769,8 +773,8 @@ async function runAutoTrends() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...authHeaders() },
       body: JSON.stringify({
-        topN: Number(document.getElementById('atTopN').value) || 10,
-        minSignal: Number(document.getElementById('atMinSignal').value) || 40,
+        maxNewCards: Number(document.getElementById('atMaxNew').value) || 60,
+        richCount: Number(document.getElementById('atRichCount').value) || 15,
         withImage: document.getElementById('atWithImage').value === 'true',
         retireManual: document.getElementById('atRetireManual').value === 'true',
       }),
