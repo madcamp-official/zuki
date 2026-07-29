@@ -94,16 +94,20 @@ export async function gatherEvidence(
         corpus,
       }));
 
-  // 뉴스를 먼저 본다 — 배경(출시, 화제성, 유행 경위)이 담기는 경우가 많다
+  // 뉴스를 먼저 본다 — 배경(출시, 화제성, 유행 경위)이 담기는 경우가 많다.
+  // 정확도순(sim)으로 뽑는다. 최신순이면 키워드가 본문에 스치기만 한 무관한
+  // 기사가 근거로 들어간다(실측: '씬쿠키'에 F1 선수 기사가 걸렸다).
   try {
-    const news = await searchNaver(keyword, 'news', 20);
+    const news = await searchNaver(keyword, 'news', 20, 1, 'sim');
     out.push(...pick(news.items, 'news'));
   } catch (err) {
     console.warn(`[trendContent] "${keyword}" 뉴스 검색 실패:`, err);
   }
 
+  // 블로그도 근거로는 정확도순이 낫다 — 사람들이 그 메뉴에 대해 실제로 뭐라고
+  // 쓰는지가 필요하지, 아무 최신 글이나 필요한 게 아니다.
   try {
-    const blog = await searchNaver(keyword, 'blog', 20);
+    const blog = await searchNaver(keyword, 'blog', 20, 1, 'sim');
     out.push(...pick(blog.items, 'blog'));
   } catch (err) {
     console.warn(`[trendContent] "${keyword}" 블로그 검색 실패:`, err);
@@ -154,16 +158,44 @@ function describeSignals(s: TrendSignalInput): string[] {
   return facts;
 }
 
-/** LLM 없이도 항상 동작하는 폴백 문구 */
-function buildFallback(s: TrendSignalInput, evidence: EvidenceItem[] = []): GeneratedTrendContent {
+/**
+ * 측정값만으로 문구를 만든다 — 외부 호출 없이 즉시, 무료.
+ *
+ * 두 곳에서 쓴다:
+ *   1) LLM이 없거나 실패했을 때의 폴백
+ *   2) 카드가 많을 때 상위권이 아닌 것들의 기본 문구
+ *      (전부 근거 수집 + LLM을 돌리면 카드당 10초 넘게 걸려 요청이 끊긴다)
+ *
+ * 방향을 문구에 반영한다. 하락 중인 메뉴에 "늘고 있습니다"라고 쓰면 안 된다.
+ */
+export function buildBasicContent(
+  s: TrendSignalInput,
+  evidence: EvidenceItem[] = []
+): GeneratedTrendContent {
   const facts = describeSignals(s);
+  const momentum = s.searchGrowthRate ?? s.mentionGrowthRate;
+
+  let summary: string;
+  if (momentum === null) {
+    summary = `${s.keyword} 관련 지표를 수집하고 있습니다.`;
+  } else if (momentum <= -15) {
+    summary = `${s.keyword} 관련 검색과 언급이 줄고 있습니다.`;
+  } else if (momentum >= 15) {
+    summary = `${s.keyword} 관련 검색과 언급이 늘고 있습니다.`;
+  } else {
+    summary = `${s.keyword} 관련 지표가 큰 변화 없이 유지되고 있습니다.`;
+  }
+
   return {
-    summary: `${s.keyword} 관련 언급과 검색이 늘고 있습니다.`,
+    summary,
     reason: facts.length > 0 ? facts.join('. ') + '.' : '수집된 지표가 아직 부족합니다.',
     generated: false,
     evidence,
   };
 }
+
+/** @deprecated buildBasicContent를 쓸 것. 이름만 남겨둔 별칭 */
+const buildFallback = buildBasicContent;
 
 /**
  * 트렌드 카드의 요약·배경 문구를 만든다.
@@ -263,6 +295,15 @@ const BEVERAGE_FORMS = [
   '커피', '음료', '드링크', '차',
 ];
 
-export function inferCategorySlug(keyword: string): 'beverage' | 'dessert' {
-  return BEVERAGE_FORMS.some((f) => keyword.endsWith(f)) ? 'beverage' : 'dessert';
+/** 마케팅은 메뉴가 아니라 활동/이벤트라 어미가 완전히 다르다 */
+const MARKETING_FORMS = [
+  '이벤트', '챌린지', '팝업', '팝업스토어', '콜라보', '굿즈', '마케팅',
+  '프로모션', '클래스', '체험', '포토존', '스탬프', '쿠폰', '멤버십',
+  '리유저블컵', '텀블러', '키링', '스티커', '뽑기', '럭키박스', '선물세트',
+];
+
+export function inferCategorySlug(keyword: string): 'beverage' | 'dessert' | 'marketing' {
+  if (MARKETING_FORMS.some((f) => keyword.endsWith(f))) return 'marketing';
+  if (BEVERAGE_FORMS.some((f) => keyword.endsWith(f))) return 'beverage';
+  return 'dessert';
 }

@@ -1,39 +1,70 @@
 import { query } from '../db/client';
+<<<<<<< HEAD
+import { generateTrendImage } from '../services/imageGeneration';
+import { generateTrendContent, buildBasicContent, inferCategorySlug } from '../services/trendContent';
+=======
 import { generateTrendImage, generateBannerImage } from '../services/imageGeneration';
 import { generateTrendContent, inferCategorySlug } from '../services/trendContent';
+>>>>>>> 4f9bdd2f7e6c3fb8485525e979e5075d25ea5991
 import { classifyStatus } from '../services/scoring';
 
 /**
- * 상위 트렌드 자동 갱신
+ * 수집한 키워드를 트렌드 카드로 만든다.
  *
- * 급상승 후보 중 신호가 강한 것들을 트렌드 카드로 자동 생성하고,
- * 순위에서 밀린 자동 카드는 내려서 항상 최신 상위 N개가 노출되게 한다.
+ * === 설계 의도 ===
  *
- * 에디터가 직접 만든 카드(is_auto=false)는 건드리지 않는다.
- * 자동 카드만 교체 대상이다.
+ * 카드는 "지금 뜨는 것"만이 아니라 **감시 중인 디저트 전체의 카탈로그**다.
+ * 그 안에서 확산 단계(태동기/상승기/전성기/하락기)로 나뉘고, 홈 화면은
+ * 그중 신호가 강한 상위 몇 개만 보여준다. 화면별 노출은 API 쿼리
+ * (sort/status/limit)로 조절하므로 카드 수를 제한할 이유가 없다.
+ *
+ * 한때 유행했다가 식은 메뉴도 카드로 남아야 "지난 유행"을 보여줄 수 있다.
+ * 그래서 순위에서 밀렸다고 카드를 내리지 않는다 — 단계만 declining으로 바뀐다.
+ *
+ * === 왜 2단계로 나누나 ===
+ *
+ * 카드마다 근거 수집(네이버 검색 2회) + LLM 문구 + AI 이미지를 돌리면
+ * 카드당 10~15초가 걸리고 이미지는 장당 과금된다. 수백 개를 한 요청에
+ * 처리하면 HTTP가 먼저 끊긴다.
+ *
+ *   상위 richCount개 : 근거 수집 + LLM 문구 + AI 이미지   (느리고 유료)
+ *   나머지           : 측정값 기반 문구, 이미지 없음        (즉시, 무료)
+ *
+ * 프론트 홈·랭킹이 각각 10개를 보여주므로 상위 15개에 이미지가 있으면
+ * 화면은 충분히 채워진다. 나머지는 기본 이미지로 처리하면 된다.
+ *
+ * === 반복 실행 ===
+ *
+ * 한 번에 다 만들지 않고 매 실행마다 maxNewCards개씩 새로 만든다.
+ * 이미 카드가 있는 키워드는 건너뛰므로, 여러 번 눌러 밀린 만큼 채워나가면 된다.
+ * 응답의 remaining으로 얼마나 남았는지 알 수 있다.
  */
 
 export interface AutoTrendSummary {
   startedAt: string;
   finishedAt: string;
-  /** 후보로 검토한 키워드 수 */
-  considered: number;
+  /** 카드로 만들 수 있는 후보 총 수 */
+  candidates: number;
+  /** 이번 실행에서 새로 만든 카드 수 */
   created: number;
-  /** 이미 카드가 있어 문구만 갱신한 수 */
+  /** 문구·점수를 갱신한 기존 자동 카드 수 */
   refreshed: number;
-  /** 순위에서 밀려 내린 자동 카드 수 */
+  /** 근거 수집 + LLM + 이미지까지 붙인 카드 수 */
+  enriched: number;
+  /** 아직 카드가 없는 후보 수. 0이 될 때까지 다시 실행하면 된다 */
+  remaining: number;
+  /** 교차검증에 실패해 이번에 내린 자동 카드 수 */
   retired: number;
-  /** 함께 내린 수동 더미 카드 수 (retireManual=true일 때만) */
-  retiredManual: number;
+  /** 교차검증을 다시 통과해 이번에 되살린 자동 카드 수 */
+  restored: number;
   errors: { keyword: string; message: string }[];
   trends: {
     id: number;
     keyword: string;
     signal: number;
-    /** LLM이 문구를 썼는지 (false면 규칙 기반 폴백) */
-    generated: boolean;
-    /** 문구의 근거가 된 실제 게시물 수 */
-    evidenceCount: number;
+    status: string;
+    /** 근거+LLM+이미지가 붙었는지 */
+    rich: boolean;
   }[];
 }
 
@@ -54,85 +85,190 @@ interface Candidate {
 const num = (v: string | null): number | null => (v === null ? null : Number(v));
 
 /**
- * @param topN 유지할 자동 카드 수
- * @param minSignal 이 점수 미만은 카드로 만들지 않는다 (노이즈 배제)
- * @param withImage OpenAI 이미지 생성 여부. 호출당 과금되므로 끌 수 있게 둔다
- * @param retireManual 손으로 만든 카드(더미 포함)도 함께 내릴지.
- *   기본은 false — 에디터가 공들여 쓴 카드를 실수로 날리면 안 되기 때문이다.
- *   시드 더미를 걷어내고 실제 수집 데이터만 보이게 할 때 true로 쓴다.
- *   삭제가 아니라 발행 취소라 언제든 되살릴 수 있다.
+ * 후보 선정 + 점수 산식.
+ *
+ * 핵심은 증감률을 **절댓값**으로 쓴다는 것이다. 부호를 그대로 쓰면 하락 중인
+ * 키워드가 항상 최하위로 깔려 카드가 절대 만들어지지 않는다. 크게 오르든
+ * 크게 내리든 "많이 움직인 것"은 사장님에게 알릴 가치가 있고, 방향 구분은
+ * classifyStatus가 단계로 표현한다.
+ *
+ * 규모(검색지수)를 다시 넣되 비중을 낮췄다. 빼면 아무도 안 찾는 키워드가
+ * 상위로 올라오고, 크게 넣으면 스테디셀러가 상위를 차지한다. 스테디셀러는
+ * 아래 WHERE 절에서 "규모는 큰데 거의 안 움직이는 것"으로 따로 걸러낸다.
  */
+const CANDIDATE_SQL = `
+  WITH latest_index AS (
+    SELECT DISTINCT ON (keyword_id) keyword_id, value FROM keyword_metrics
+     WHERE source_type='naver' AND metric_type='search_index'
+     ORDER BY keyword_id, collected_date DESC),
+  latest_growth AS (
+    SELECT DISTINCT ON (keyword_id) keyword_id, value FROM keyword_metrics
+     WHERE source_type='naver' AND metric_type='search_growth_rate'
+     ORDER BY keyword_id, collected_date DESC),
+  latest_mention_growth AS (
+    SELECT DISTINCT ON (keyword_id) keyword_id, value FROM keyword_metrics
+     WHERE source_type='naver' AND metric_type='mention_growth_rate'
+     ORDER BY keyword_id, collected_date DESC),
+  latest_velocity AS (
+    SELECT DISTINCT ON (keyword_id) keyword_id, value FROM keyword_metrics
+     WHERE source_type='youtube' AND metric_type='view_velocity'
+     ORDER BY keyword_id, collected_date DESC)
+  SELECT k.id, k.keyword, k.trend_id, k.sources, k.mention_count,
+         li.value AS search_index,
+         lg.value AS growth_rate,
+         lmg.value AS mention_growth_rate,
+         k.yoy_growth_rate::text AS yoy_growth_rate,
+         lv.value AS view_velocity,
+         ROUND(
+           -- 변화 강도(방향 무관) 55 + 규모 30 + 교차검증 15
+           LEAST(ABS(COALESCE(lg.value,0)) + ABS(COALESCE(lmg.value,0)), 150)/150.0*55
+           + LEAST(li.value, 60)/60.0*30
+           + LEAST(COALESCE(array_length(k.sources,1),0),3)/3.0*15
+         , 2)::text AS trend_signal
+    FROM keywords k
+    JOIN latest_index li ON li.keyword_id = k.id
+    LEFT JOIN latest_growth lg ON lg.keyword_id = k.id
+    LEFT JOIN latest_mention_growth lmg ON lmg.keyword_id = k.id
+    LEFT JOIN latest_velocity lv ON lv.keyword_id = k.id
+   WHERE li.value >= $1
+     AND k.mention_count >= $2
+     AND k.is_seasonal = false
+     -- 교차 검증: 몇 개 소스(블로그/카페/유튜브)에서 잡혔는지.
+     --
+     -- 이게 노이즈를 거르는 가장 효과적인 장치다. 실측 결과:
+     --   소스 1개 -> 마티에부산하버시티(호텔), 돼지게티(라면), 자몽톡허니블랙티
+     --   소스 2~3개 -> 씬쿠키, 샌드베이글, 왁뿌소금빵
+     -- 개인 가게 이름이나 다른 카테고리 상품은 카페·디저트 검색 세 곳에서
+     -- 동시에 잡히지 않는다. 규칙 기반 필터로는 '티'·'빵' 같은 흔한 어미를
+     -- 끝없이 막아야 하는데, 이 조건 하나가 그걸 대체한다.
+     --
+     -- 단, 사람이 직접 등록한 키워드(source='editor')는 이 검사를 건너뛴다.
+     -- 지난 유행(두바이초콜릿, 흑당버블티 등)은 지금 아무도 글을 안 써서
+     -- 발굴에 걸리지 않는다. 그런데 "지난 유행"을 보여주려면 바로 그런
+     -- 키워드가 필요하다. 교차검증은 자동 발굴의 노이즈를 거르는 장치이지,
+     -- 의도적으로 넣은 감시 대상까지 막으라는 뜻이 아니다.
+     AND (k.source = 'editor' OR COALESCE(array_length(k.sources, 1), 0) >= $3)
+     -- 스테디셀러 제외: 규모는 큰데 거의 안 움직이는 것 (에그타르트, 밀크티 등)
+     AND NOT (li.value >= 40 AND ABS(COALESCE(lg.value,0)) < 5)
+   ORDER BY trend_signal DESC, k.mention_count DESC
+`;
+
+/**
+ * 이미 만들어진 자동 카드에도 교차검증을 다시 적용한다.
+ *
+ * CANDIDATE_SQL의 WHERE 절은 **새로 만들 카드**만 거른다. 필터를 강화하기
+ * 전에 만들어진 카드는 그대로 남아서, 규칙을 바꿔도 화면에는 옛날 노이즈가
+ * 계속 보인다 (돼지게티=라면, 마티에부산하버시티=호텔 등).
+ *
+ * 그래서 매 실행마다 전체 자동 카드를 다시 검사한다. 규칙은 딱 하나 —
+ * 사람이 직접 넣은 키워드가 아니면 2개 이상의 소스에서 잡혀야 한다.
+ *
+ * 삭제가 아니라 is_published 토글인 이유:
+ *   - sources[]는 발굴이 돌 때마다 채워진다. 지금 1개여도 다음 발굴에서
+ *     2개가 될 수 있고, 그때 카드가 저절로 되살아나야 한다.
+ *   - 카드를 지우면 trend_id 연결과 점수 이력까지 날아간다.
+ * 그래서 내리기와 되살리기를 한 쌍으로 둔다.
+ */
+async function revalidateAutoTrends(minSources: number) {
+  const VALID = `(k.source = 'editor' OR COALESCE(array_length(k.sources, 1), 0) >= $1)`;
+
+  const retired = await query<{ id: number }>(
+    `UPDATE trends t SET is_published = false, updated_at = now()
+       FROM keywords k
+      WHERE k.trend_id = t.id AND t.is_auto = true AND t.is_published = true
+        AND NOT ${VALID}
+      RETURNING t.id`,
+    [minSources]
+  );
+
+  const restored = await query<{ id: number }>(
+    `UPDATE trends t SET is_published = true, updated_at = now()
+       FROM keywords k
+      WHERE k.trend_id = t.id AND t.is_auto = true AND t.is_published = false
+        AND ${VALID}
+      RETURNING t.id`,
+    [minSources]
+  );
+
+  return { retired: retired.length, restored: restored.length };
+}
+
+export interface AutoTrendOptions {
+  /** 이번 실행에서 새로 만들 카드 수 상한. 요청이 끊기지 않을 만큼만 */
+  maxNewCards?: number;
+  /** 근거 수집 + LLM 문구 + AI 이미지를 붙일 상위 카드 수 */
+  richCount?: number;
+  /** 최소 검색지수 */
+  minIndex?: number;
+  /** 최소 언급 횟수 (가게 이름 등 일회성 표현 배제) */
+  minMentions?: number;
+  /**
+   * 최소 소스 수. 기본 2 — 두 곳 이상에서 잡힌 것만 카드로 만든다.
+   * 한 곳에서만 나온 키워드는 그 소스의 편향이거나 카페 트렌드가 아닌
+   * 경우가 대부분이다(호텔 이름, 라면 등). 1로 낮추면 후보는 늘지만
+   * 노이즈도 같이 늘어난다.
+   */
+  minSources?: number;
+  /** AI 이미지 생성 여부. 카드당 과금되므로 끌 수 있게 둔다 */
+  withImage?: boolean;
+  /** 손으로 만든 카드(시드 더미 포함)도 함께 내릴지 */
+  retireManual?: boolean;
+}
+
 export async function refreshAutoTrends(
-  topN = 10,
-  minSignal = 40,
-  withImage = true,
-  retireManual = false
+  options: AutoTrendOptions = {}
 ): Promise<AutoTrendSummary> {
+  const {
+    maxNewCards = 60,
+    richCount = 15,
+    minIndex = 5,
+    minMentions = 2,
+    minSources = 2,
+    withImage = true,
+    retireManual = false,
+  } = options;
+
   const startedAt = new Date();
   const summary: AutoTrendSummary = {
     startedAt: startedAt.toISOString(),
     finishedAt: '',
-    considered: 0,
+    candidates: 0,
     created: 0,
     refreshed: 0,
+    enriched: 0,
+    remaining: 0,
     retired: 0,
-    retiredManual: 0,
+    restored: 0,
     errors: [],
     trends: [],
   };
 
-  // 급상승 후보를 신호 순으로 가져온다.
-  // listRisingKeywords와 같은 기준을 쓰되, 이미 카드가 있는 것도 포함해서
-  // (includeLinked) 기존 자동 카드의 문구·점수를 갱신할 수 있게 한다.
-  const candidates = await query<Candidate>(
-    `WITH latest_index AS (
-       SELECT DISTINCT ON (keyword_id) keyword_id, value FROM keyword_metrics
-        WHERE source_type='naver' AND metric_type='search_index'
-        ORDER BY keyword_id, collected_date DESC),
-     latest_growth AS (
-       SELECT DISTINCT ON (keyword_id) keyword_id, value FROM keyword_metrics
-        WHERE source_type='naver' AND metric_type='search_growth_rate'
-        ORDER BY keyword_id, collected_date DESC),
-     latest_mention_growth AS (
-       SELECT DISTINCT ON (keyword_id) keyword_id, value FROM keyword_metrics
-        WHERE source_type='naver' AND metric_type='mention_growth_rate'
-        ORDER BY keyword_id, collected_date DESC),
-     latest_velocity AS (
-       SELECT DISTINCT ON (keyword_id) keyword_id, value FROM keyword_metrics
-        WHERE source_type='youtube' AND metric_type='view_velocity'
-        ORDER BY keyword_id, collected_date DESC)
-     SELECT k.id, k.keyword, k.trend_id, k.sources, k.mention_count,
-            li.value AS search_index,
-            lg.value AS growth_rate,
-            lmg.value AS mention_growth_rate,
-            k.yoy_growth_rate::text AS yoy_growth_rate,
-            lv.value AS view_velocity,
-            ROUND(
-              (LEAST(GREATEST(COALESCE(lmg.value,0),-100),200) + 100)/300.0*45
-              + (LEAST(GREATEST(COALESCE(lg.value,0),-50),50) + 50)/100.0*30
-              + LEAST(COALESCE(array_length(k.sources,1),0),3)/3.0*25
-            , 2)::text AS trend_signal
-       FROM keywords k
-       JOIN latest_index li ON li.keyword_id = k.id
-       LEFT JOIN latest_growth lg ON lg.keyword_id = k.id
-       LEFT JOIN latest_mention_growth lmg ON lmg.keyword_id = k.id
-       LEFT JOIN latest_velocity lv ON lv.keyword_id = k.id
-      WHERE li.value >= 5
-        AND k.mention_count >= 2
-        AND k.is_seasonal = false
-        AND NOT (li.value >= 40 AND COALESCE(lg.value, 0) < 5)
-      ORDER BY trend_signal DESC, k.mention_count DESC
-      LIMIT $1`,
-    [topN]
-  );
+  // 새 카드를 만들기 전에 기존 카드부터 현재 규칙으로 다시 검사한다
+  const revalidated = await revalidateAutoTrends(minSources);
+  summary.retired = revalidated.retired;
+  summary.restored = revalidated.restored;
 
-  summary.considered = candidates.length;
+  const candidates = await query<Candidate>(CANDIDATE_SQL, [minIndex, minMentions, minSources]);
+  summary.candidates = candidates.length;
 
-  const keptTrendIds: number[] = [];
+  // 아직 카드가 없는 후보만 이번 실행에서 새로 만든다.
+  // 이미 있는 것은 상위 richCount 안에 들 때만 문구를 갱신한다.
+  const withoutCard = candidates.filter((c) => c.trend_id === null);
+  const toCreate = withoutCard.slice(0, maxNewCards);
+  summary.remaining = Math.max(withoutCard.length - toCreate.length, 0);
 
-  for (const c of candidates) {
+  // 상위 richCount개는 근거+LLM+이미지를 붙인다. 순위는 전체 후보 기준
+  const richKeywordIds = new Set(candidates.slice(0, richCount).map((c) => c.id));
+
+  /** 새로 만들 것 + 상위권 기존 카드(문구 갱신 대상) */
+  const targets = [
+    ...toCreate,
+    ...candidates.filter((c) => c.trend_id !== null && richKeywordIds.has(c.id)),
+  ];
+
+  for (const c of targets) {
     const signal = Number(c.trend_signal);
-    if (signal < minSignal) continue;
+    const isRich = richKeywordIds.has(c.id);
 
     try {
       const signalInput = {
@@ -146,9 +282,12 @@ export async function refreshAutoTrends(
         viewVelocity: num(c.view_velocity),
       };
 
-      const content = await generateTrendContent(signalInput);
+      // 상위권만 실제 게시물을 검색해 근거 기반 문구를 만든다.
+      // 나머지는 측정값만으로 문구를 구성한다 (외부 호출 없음, 즉시).
+      const content = isRich
+        ? await generateTrendContent(signalInput)
+        : buildBasicContent(signalInput);
 
-      // 확산 단계는 수집 지표로 판정 (자동 카드도 같은 기준을 쓴다)
       const status = classifyStatus({
         searchLevel: signalInput.searchIndex,
         searchMomentum: signalInput.searchGrowthRate,
@@ -157,37 +296,25 @@ export async function refreshAutoTrends(
       });
 
       if (c.trend_id) {
-        // 이미 카드가 있으면 문구와 점수만 갱신한다.
-        // 에디터가 만든 카드(is_auto=false)의 문구는 덮어쓰지 않는다.
-        const [updated] = await query<{ id: number }>(
+        await query(
           `UPDATE trends
-              SET summary     = CASE WHEN is_auto THEN $2 ELSE summary END,
-                  reason      = CASE WHEN is_auto THEN $3 ELSE reason END,
-                  evidence    = CASE WHEN is_auto THEN $6::jsonb ELSE evidence END,
-                  status      = $4,
-                  score       = $5,
-                  auto_signal = $5,
+              SET summary      = CASE WHEN is_auto THEN $2 ELSE summary END,
+                  reason       = CASE WHEN is_auto THEN $3 ELSE reason END,
+                  evidence     = CASE WHEN is_auto THEN $6::jsonb ELSE evidence END,
+                  status       = $4,
+                  score        = $5,
+                  auto_signal  = $5,
                   is_published = true,
-                  updated_at  = now()
-            WHERE id = $1
-            RETURNING id`,
+                  updated_at   = now()
+            WHERE id = $1`,
           [c.trend_id, content.summary, content.reason, status, signal, JSON.stringify(content.evidence)]
         );
-        if (updated) {
-          keptTrendIds.push(c.trend_id);
-          summary.refreshed += 1;
-          summary.trends.push({
-            id: c.trend_id,
-            keyword: c.keyword,
-            signal,
-            generated: content.generated,
-            evidenceCount: content.evidence.length,
-          });
-        }
+        summary.refreshed += 1;
+        if (isRich) summary.enriched += 1;
+        summary.trends.push({ id: c.trend_id, keyword: c.keyword, signal, status, rich: isRich });
         continue;
       }
 
-      // 새 카드 생성
       const categorySlug = inferCategorySlug(c.keyword);
       const [category] = await query<{ id: number }>(
         `SELECT id FROM categories WHERE slug = $1`,
@@ -209,18 +336,11 @@ export async function refreshAutoTrends(
       // 키워드를 카드에 연결해야 다음 수집부터 이 카드의 점수가 갱신된다
       await query(`UPDATE keywords SET trend_id = $1 WHERE id = $2`, [trend.id, c.id]);
 
-      keptTrendIds.push(trend.id);
       summary.created += 1;
-      summary.trends.push({
-        id: trend.id,
-        keyword: c.keyword,
-        signal,
-        generated: content.generated,
-        evidenceCount: content.evidence.length,
-      });
+      summary.trends.push({ id: trend.id, keyword: c.keyword, signal, status, rich: isRich });
 
-      // 이미지 생성은 호출당 과금이라 실패해도 카드 생성을 막지 않는다
-      if (withImage) {
+      // 이미지는 상위권에만. 실패해도 카드 생성을 막지 않는다
+      if (isRich && withImage) {
         try {
           // gatherEvidence()로 이미 확보해둔 실제 뉴스/블로그 발췌를 그대로
           // 재사용한다 — "돼지게티" 같은 신조어도 원문에서 실제 생김새 힌트를
@@ -233,6 +353,7 @@ export async function refreshAutoTrends(
             content.evidence,
           );
           await query(`UPDATE trends SET image_url = $1 WHERE id = $2`, [url, trend.id]);
+          summary.enriched += 1;
         } catch (err) {
           console.warn(`[autoTrends] "${c.keyword}" 이미지 생성 실패:`, err);
         }
@@ -244,30 +365,18 @@ export async function refreshAutoTrends(
     }
   }
 
-  // 순위에서 밀린 자동 카드는 내린다 (삭제가 아니라 발행 취소).
-  // 즐겨찾기·이력이 걸려 있을 수 있어 지우지 않고, 다시 순위에 들면 되살아난다.
-  const retired = await query<{ id: number }>(
-    `UPDATE trends
-        SET is_published = false, updated_at = now()
-      WHERE is_auto = true
-        AND is_published = true
-        ${keptTrendIds.length > 0 ? `AND id <> ALL($1::bigint[])` : ''}
-      RETURNING id`,
-    keptTrendIds.length > 0 ? [keptTrendIds] : []
-  );
-  summary.retired = retired.length;
-
-  // 요청 시에만 수동 카드도 내린다.
-  // 자동 카드가 하나도 안 만들어졌다면 내리지 않는다 — 그러면 사이트가 통째로
-  // 비어버리기 때문이다. 실제 데이터로 갈아끼우는 게 목적이지 비우는 게 아니다.
-  if (retireManual && keptTrendIds.length > 0) {
-    const retiredManual = await query<{ id: number }>(
-      `UPDATE trends
-          SET is_published = false, updated_at = now()
-        WHERE is_auto = false AND is_published = true
-        RETURNING id`
+  // 손으로 만든 카드(시드 더미) 정리 — 요청했을 때만.
+  // 자동 카드가 하나도 없으면 사이트가 통째로 비므로 내리지 않는다.
+  if (retireManual) {
+    const [autoCount] = await query<{ n: string }>(
+      `SELECT count(*)::text AS n FROM trends WHERE is_auto = true AND is_published = true`
     );
-    summary.retiredManual = retiredManual.length;
+    if (Number(autoCount?.n ?? 0) > 0) {
+      await query(
+        `UPDATE trends SET is_published = false, updated_at = now()
+          WHERE is_auto = false AND is_published = true`
+      );
+    }
   }
 
   // 1위 트렌드가 바뀌었으면 홈 히어로 배너 전용 이미지를 새로 만든다.
@@ -285,7 +394,8 @@ export async function refreshAutoTrends(
 
   console.log(
     `[autoTrends] 완료: 생성 ${summary.created} / 갱신 ${summary.refreshed} / ` +
-      `내림 ${summary.retired} / 수동카드 내림 ${summary.retiredManual}`
+      `상세생성 ${summary.enriched} / 내림 ${summary.retired} / 되살림 ${summary.restored} / ` +
+      `남은 후보 ${summary.remaining}`
   );
   return summary;
 }

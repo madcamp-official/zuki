@@ -193,6 +193,28 @@ CREATE TABLE collection_batches (
     finished_at     TIMESTAMPTZ
 );
 
+-- ---------------------------------------------------------------------
+-- pipeline_runs: 발굴→수집→카드갱신 파이프라인 실행 이력
+--
+-- 실행 상태를 프로세스 메모리에만 두면, 재배포나 Render 슬립으로 프로세스가
+-- 내려갈 때 "방금 뭐가 돌았는지"가 통째로 사라진다. 실행은 정상이었는데
+-- 화면에는 null이 떠서 실패로 오인하게 된다. 그래서 DB에도 남긴다.
+-- ---------------------------------------------------------------------
+CREATE TABLE pipeline_runs (
+    id           BIGSERIAL PRIMARY KEY,
+    -- 'api' | 'cron:discover-light' | 'cron:discover-youtube' | 'cron:full'
+    trigger      VARCHAR(40) NOT NULL,
+    status       VARCHAR(20) NOT NULL DEFAULT 'running', -- running|success|partial|failed
+    stage        VARCHAR(20),                            -- 진행 중인 단계. 끝나면 NULL
+    started_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    finished_at  TIMESTAMPTZ,
+    -- 단계별 요약과 오류 목록. 구조가 자주 바뀌어 컬럼으로 못 박지 않는다
+    summary      JSONB NOT NULL DEFAULT '{}'::jsonb
+);
+
+-- 최신 실행 1건 조회가 대부분의 접근 패턴이다
+CREATE INDEX idx_pipeline_runs_started ON pipeline_runs (started_at DESC);
+
 -- =====================================================================
 -- 초기 시드 데이터 (카테고리)
 -- 빵류(베이커리 메뉴)는 별도 카테고리를 만들지 않고 '디저트'에 포함

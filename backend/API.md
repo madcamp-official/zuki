@@ -162,21 +162,30 @@
 
 **`status` (확산 단계)** — 수준(검색지수)과 모멘텀(증감률) 2차원으로 분류합니다.
 
-| | 감소 (−15%↓) | 정체 | 증가 (+15%↑) |
+| | 감소 (−15%↓) | 정체 | 급등 (+50%↑) |
 |---|---|---|---|
-| 지수 60 이상 | `declining` | `peak` | `peak` |
-| 지수 30~60 | `declining` | `rising` | `rising` |
-| 지수 30 미만 | `emerging` | `emerging` | `emerging` |
+| 지수 40 이상 | `declining` | `peak` | `rising` |
+| 지수 15~40 | `declining` | `rising` | `rising` |
+| 지수 5~15 | `declining` | `emerging` | `emerging` |
+| 지수 5 미만 | `emerging` | `emerging` | `emerging` |
 
 증감률만으로 판정하면 밑바닥에서 시작한 무명 키워드(+100%)가 전성기로, 이미 큰 트렌드(+12%)가 태동기로 뒤집힙니다. 그래서 두 축을 함께 봅니다.
 
-**`score` (랭킹 점수, 0~100)** — "지금 주목할 가치"
+기준값을 실측에 맞춰 낮췄습니다(원래 60/30 → 40/15). 네이버 검색지수는 요청한 키워드 묶음 안에서 최댓값을 100으로 잡는 **상대값**이라, 신생 디저트 키워드는 대부분 30 미만으로 나옵니다. 원래 기준이면 거의 전부 `emerging`으로 몰려 하락기 카드가 만들어지지 않았습니다.
+
+**하락 판정만 규모 기준이 더 낮습니다(5).** 한때 유행했다가 식은 메뉴는 지금 검색지수가 이미 많이 떨어져 있어서, 일반 기준을 쓰면 "태동기"로 잘못 분류됩니다.
+
+**규모가 커도 급등 중(+50%↑)이면 `peak`가 아니라 `rising`입니다.** 전성기는 "이미 높은 수준에서 정체"를 뜻하기 때문입니다.
+
+**`score` (트렌드 신호, 0~100)** — "지금 주목할 가치"
 
 ```
-검색지수 × 0.6  +  증감률(−100~100을 0~100으로 변환) × 0.4
+변화 강도(방향 무관) × 0.55  +  검색지수 × 0.30  +  교차검증 × 0.15
 ```
 
-증감률에 상한을 두는 이유는 지수 1→3으로 오른 무명 키워드가 200% 증가로 1위를 먹는 걸 막기 위해서입니다.
+**증감률을 절댓값으로 씁니다.** 부호를 그대로 쓰면 하락 중인 키워드가 항상 최하위로 깔려 카드가 절대 만들어지지 않습니다. 크게 오르든 크게 내리든 "많이 움직인 것"은 알릴 가치가 있고, 방향 구분은 `status`가 표현합니다. 덕분에 상승·하락 트랙을 따로 둘 필요가 없습니다.
+
+검색지수는 비중을 낮춰 넣습니다. 빼면 아무도 안 찾는 키워드가 상위로 오고, 크게 넣으면 스테디셀러가 상위를 차지합니다. 스테디셀러(지수 40 이상인데 변화 5% 미만)는 후보 단계에서 따로 제외합니다.
 
 > `score`는 **증감률이 아닙니다.** 화면에 "검색량 +N%"로 표시하려면 `search_growth_rate`를, "언급량"은 `mention_growth_rate`를 쓰세요.
 
@@ -354,25 +363,50 @@ npm run grant:admin -- someone@example.com editor    # editor 부여
 급상승 후보 중 신호가 강한 것들을 **트렌드 카드로 자동 생성**하고, 순위에서 밀린 자동 카드는 내립니다. 항상 최신 상위 N개가 노출됩니다.
 
 ```json
-{ "topN": 10, "minSignal": 40, "withImage": true }
+{ "maxNewCards": 60, "richCount": 15, "withImage": true, "retireManual": false }
 ```
 
 | 항목 | 기본값 | 설명 |
 |---|---|---|
-| `topN` | 10 (최대 30) | 유지할 자동 카드 수 |
-| `minSignal` | 40 | 이 점수 미만은 카드로 만들지 않음 (노이즈 배제) |
-| `withImage` | true | OpenAI 이미지 생성. 카드당 과금되므로 끌 수 있음 |
+| `maxNewCards` | 60 (최대 200) | 이번 실행에서 새로 만들 카드 수 |
+| `richCount` | 15 (최대 50) | 근거 수집 + LLM 문구 + AI 이미지를 붙일 상위 카드 수 |
+| `minIndex` / `minMentions` | 5 / 2 | 후보 최소 조건 |
+| `withImage` | true | AI 이미지 생성. 카드당 과금 |
+| `retireManual` | false | 손으로 만든 카드도 함께 내릴지 |
 
 ```json
 {
   "summary": {
-    "considered": 10, "created": 6, "refreshed": 3, "retired": 2,
+    "candidates": 180, "created": 60, "refreshed": 15,
+    "enriched": 15, "remaining": 105,
+    "retired": 3, "restored": 1,
     "trends": [
-      { "id": 41, "keyword": "씬쿠키", "signal": 68.3, "generated": true, "evidenceCount": 8 }
+      { "id": 41, "keyword": "씬쿠키", "signal": 88.2, "status": "rising", "rich": true }
     ],
     "errors": []
   }
 }
+```
+
+**한 번에 다 만들지 않습니다.** 매 실행마다 새 카드를 `maxNewCards`만큼만 만들고, 아직 카드가 없는 후보 수를 `remaining`으로 알려줍니다. **0이 될 때까지 여러 번 실행**하면 됩니다. 수백 개를 한 요청에 처리하면 HTTP가 먼저 끊기기 때문입니다.
+
+**기존 카드도 매번 다시 검사합니다.** 후보 조건은 새 카드만 거르기 때문에, 필터를 강화해도 그 전에 만들어진 카드는 화면에 남습니다. 그래서 실행 시작 시 전체 자동 카드에 교차검증(사람이 넣은 키워드가 아니면 소스 2곳 이상)을 다시 적용해 `retired`개를 내리고, 다시 조건을 만족하게 된 `restored`개를 되살립니다. 삭제가 아니라 `is_published` 토글이므로 다음 발굴에서 소스가 채워지면 카드가 저절로 돌아옵니다.
+
+**상위 카드에만 공을 들입니다.**
+
+| | 문구 | 이미지 | 속도 |
+|---|---|---|---|
+| 상위 `richCount`개 | 뉴스·블로그 근거 + LLM | AI 생성 | 카드당 10~15초, 과금 |
+| 나머지 | 측정값 기반 | 없음 | 즉시, 무료 |
+
+프론트 홈·랭킹이 각각 10개를 보여주므로 상위 15개에 이미지가 있으면 화면은 채워집니다. 나머지는 기본 이미지로 처리하세요.
+
+**카드는 카탈로그입니다.** "지금 뜨는 것"만이 아니라 감시 중인 디저트 전체가 카드가 되고, 확산 단계로 나뉩니다. 순위에서 밀렸다고 카드를 내리지 않습니다 — 단계가 `declining`으로 바뀔 뿐이라 "지난 유행"을 계속 보여줄 수 있습니다. 화면별 노출은 `sort`/`status`/`limit`으로 조절하세요.
+
+```
+홈        GET /api/trends?sort=score&limit=10
+지난 유행  GET /api/trends?status=declining&sort=score
+카테고리   GET /api/trends?category=dessert&limit=40
 ```
 
 **문구는 지어내지 않습니다.**
@@ -532,8 +566,8 @@ https://bnghhjikybnoztaxjuey.supabase.co/storage/v1/object/public/trend-images/t
 
 네이버/유튜브 수집 배치를 즉시 실행. body 없음.
 
-`COLLECT_SECRET` 환경변수가 설정돼 있으면 `x-collect-secret` 헤더가 일치해야 합니다(불일치 시 `401`).
-비어 있으면 인증 없이 호출 가능합니다. 배포 환경에서는 외부 스케줄러가 이 API를 매일 호출해 자동 수집을 수행합니다.
+`x-collect-secret` 헤더 또는 관리자 로그인 토큰 중 하나면 통과합니다(둘 다 없으면 `401`).
+`COLLECT_SECRET`이 비어 있으면 인증 없이 호출 가능합니다.
 
 ```json
 {
@@ -554,6 +588,64 @@ https://bnghhjikybnoztaxjuey.supabase.co/storage/v1/object/public/trend-images/t
 |---|---|---|---|
 | 넓게 | 후보 포함 전체 키워드 | 네이버만 (5개씩 묶음) | `NAVER_KEYWORD_LIMIT` (기본 500) |
 | 깊게 | 트렌드 카드에 연결된 키워드 | 네이버 + 유튜브 | `YOUTUBE_KEYWORD_LIMIT` (기본 80) |
+
+### POST /api/admin/pipeline
+
+발굴 → 수집 → 카드 갱신을 한 번에 실행.
+
+`/collect`와 함께 **`x-collect-secret` 헤더 또는 관리자 로그인 토큰 중 하나**면 통과합니다.
+호출자가 둘로 갈리기 때문입니다 — 외부 스케줄러는 로그인할 수 없으니 비밀키를 쓰고, 데모 페이지의 관리자는 이미 로그인해 있으니 Bearer 토큰을 씁니다.
+`COLLECT_SECRET`이 비어 있으면 로컬 개발로 보고 인증 없이 열립니다.
+
+```json
+{ "discover": true, "youtube": true, "collect": true, "autoRefresh": true,
+  "withImage": true, "maxNewCards": 60, "richCount": 15 }
+```
+
+| 필드 | 기본 | 설명 |
+|---|---|---|
+| `discover` | true | 후보 키워드 발굴 |
+| `youtube` | **false** | 발굴에 유튜브 포함. 505 unit 소모라 기본은 끔 |
+| `archive` | false | 지난 유행 발굴 모드 (아래 참고) |
+| `pages` | 5 | 네이버 쿼리당 페이지 수(1~10). 한 페이지 = 글 100건 |
+| `collect` | false | 네이버·유튜브 지표 수집 |
+| `autoRefresh` | false | 카드 생성·갱신. `remaining`이 0이 될 때까지 최대 8회 반복 |
+| `withImage` | true | AI 이미지 생성 (카드당 과금). 첫 회차에만 적용 |
+
+**`archive: true` — 지난 유행 발굴.** 평소 발굴은 최신순(`sort=date`)이라 구조적으로 지금 뜨는 것만 잡힙니다. 흑당버블티는 지금 아무도 글을 안 쓰기 때문입니다. 이 모드는 회고 검색어 32개를 **정확도순(`sort=sim`)으로 10페이지까지** 훑어 오래전 글에 남아 있는 과거 유행을 캐냅니다. 여기서 나온 키워드는 수집 후 검색량이 낮게 나와 하락기 카드가 됩니다. 유튜브는 최근 30일만 보므로 이 모드에서는 쓰지 않습니다.
+
+**응답은 `202`이고 작업은 백그라운드에서 이어집니다.** 수 분씩 걸리는데 외부 스케줄러는 보통 30초에서 끊기기 때문에, 동기로 처리하면 작업이 정상 완료돼도 실패로 기록됩니다.
+
+이미 실행 중이면 `409`를 주고 중복 실행하지 않습니다 — 같은 외부 API를 두 번 쓰면 할당량이 두 배로 나가기 때문입니다.
+
+### GET /api/admin/pipeline
+
+진행 중이거나 마지막으로 끝난 실행 상태.
+
+```json
+{
+  "running": true,
+  "lastRun": {
+    "trigger": "cron:discover-light",
+    "startedAt": "...", "finishedAt": null,
+    "currentStage": "discover",
+    "discovery": { "discovered": 214, "inserted": 31, "updated": 183, "multiSource": 46, "errors": [], "sources": {} },
+    "collect": null,
+    "autoTrends": null,
+    "errors": []
+  }
+}
+```
+
+**서버가 스스로도 돌립니다.** `node-cron`으로 세 주기가 등록돼 있습니다 (시간대 `Asia/Seoul`).
+
+| 스케줄 | 기본 주기 | 하는 일 | 환경변수 |
+|---|---|---|---|
+| 가벼운 발굴 | 1시간마다 | 네이버 블로그·카페 | `DISCOVER_CRON` |
+| 유튜브 포함 발굴 | 하루 2회 | 위 + 유튜브 검색 | `DISCOVER_YOUTUBE_CRON` |
+| 전체 실행 | 매일 04:00 | 발굴 + 수집 + 카드 갱신 | `PIPELINE_CRON` |
+
+단, Render 무료 플랜은 15분 무요청 시 슬립되어 cron이 뜨지 않습니다. 외부에서 `GET /health`를 10분마다 쳐서 깨워둬야 합니다(할당량 소모 없음). 자세한 건 README의 "파이프라인 자동화" 참고.
 
 ---
 

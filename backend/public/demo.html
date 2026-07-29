@@ -257,22 +257,73 @@
       <pre class="out" id="kwOut"></pre>
     </div>
 
-    <div class="card">
-      <h2><span class="method">POST</span>/api/admin/keywords/discover — 후보 키워드 발굴</h2>
+    <div class="card" style="border-color: var(--accent)">
+      <h2><span class="method">POST</span>/api/admin/pipeline — 파이프라인 실행</h2>
       <p class="hint">
-        네이버 데이터랩은 "이 키워드가 뜨나?"에만 답하고 "뭐가 뜨나?"는 못 알려줍니다(급상승 키워드 API 없음).
-        그래서 지금 올라오는 콘텐츠에서 후보를 찾습니다 — <strong>네이버 블로그</strong>, <strong>네이버 카페글</strong>,
-        <strong>유튜브 검색</strong> 세 소스를 각각 훑습니다.<br />
-        세 소스를 따로 부르는 이유는 <strong>교차 검증</strong> 때문입니다. 어떤 소스도 편향이 있어서(블로그는 체험단·협찬이 많고,
-        카페는 연령대가 갈리고, 유튜브는 채널 구독자층이 다름), 한 곳에서만 잡힌 키워드는 그 소스의 편향일 수 있습니다.
-        개인 카페·빵집 이름이 대개 블로그 한 곳에서만 나온다는 점에서 노이즈도 함께 걸러집니다.<br />
-        유튜브는 인기 급상승 차트 대신 <strong>주제 검색 + 조회수 속도</strong>를 씁니다(차트는 음악·예능이 점령해 디저트가 안 나옴).
-        특정 채널을 고정하지 않는 이유는 고르는 사람의 취향이 들어가기 때문입니다.
+        <strong>발굴 → 수집 → 카드 갱신</strong>을 한 흐름으로 돌립니다. 예전에는 세 버튼으로 나뉘어 있었는데,
+        순서를 잘못 누르면(수집 전에 갱신 등) 결과가 비어서 하나로 합쳤습니다.<br /><br />
+
+        <strong>서버가 스스로도 돌립니다.</strong> 1시간마다 발굴(네이버), 하루 2회 유튜브 포함 발굴,
+        새벽 4시에 전체 실행. 아래 버튼은 그 스케줄을 기다리지 않고 지금 돌리는 용도입니다.<br /><br />
+
+        <strong>요청은 즉시 202로 끝나고 작업은 뒤에서 계속됩니다.</strong> 수 분씩 걸리는데 스케줄러는 보통
+        30초에서 끊기기 때문입니다. 진행 상황은 5초마다 자동으로 갱신되고, 이미 실행 중이면 중복 실행되지
+        않습니다(같은 API를 두 번 쓰면 할당량이 두 배로 나가므로).
       </p>
-      <button class="go" onclick="discoverKeywords({})">전체 실행</button>
-      <button class="go ghost" onclick="discoverKeywords({cafe:false, youtube:false})">블로그만</button>
-      <button class="go ghost" onclick="discoverKeywords({blog:false, cafe:false})">유튜브만</button>
-      <pre class="out" id="discoverOut"></pre>
+
+      <label style="margin-top:4px">실행할 작업</label>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px">
+        <button class="go" onclick="runPipeline({youtube:false})">발굴 (네이버)</button>
+        <button class="go ghost" onclick="runPipeline({youtube:true})">발굴 (유튜브 포함)</button>
+        <button class="go ghost" onclick="runPipeline({archive:true})">지난 유행 발굴</button>
+        <button class="go ghost" onclick="runPipeline({youtube:true, collect:true, autoRefresh:true})">전체 실행</button>
+        <button class="go ghost" onclick="pipelineStatus()">상태 확인</button>
+      </div>
+
+      <p class="hint" style="margin-top:0">
+        <strong>발굴</strong>은 블로그·카페 글 제목에서 후보 키워드를 뽑습니다. 쿼리당 5페이지(500건)씩,
+        21개 검색어 × 2개 소스 = 210회 호출(네이버 하루 한도의 0.8%).
+        <strong>유튜브 포함</strong>은 505 unit을 더 쓰므로 하루 몇 번만 씁니다.<br />
+        <strong>지난 유행 발굴</strong>은 방식이 다릅니다. 평소 발굴은 최신순이라 구조적으로 지금 뜨는 것만
+        잡힙니다 — 흑당버블티는 지금 아무도 글을 안 쓰니까요. 이 모드는 회고 검색어 32개를
+        <strong>정확도순으로 10페이지까지</strong> 훑어 오래전 글에 남은 과거 유행을 캐냅니다.
+        여기서 나온 키워드는 검색량이 낮게 나와 하락기 카드가 됩니다.<br />
+        <strong>전체 실행</strong>은 발굴 후 네이버 데이터랩·유튜브로 지표를 수집하고, 카드를 만들거나 갱신합니다.
+        아래 옵션이 이 단계에 적용됩니다.
+      </p>
+
+      <label>카드 생성 옵션 (전체 실행에만 적용)</label>
+      <div class="row">
+        <div><label>한 회차에 만들 카드 수</label><input id="atMaxNew" type="number" value="60" min="1" max="200" /></div>
+        <div><label>상세 생성 상위 N (과금)</label><input id="atRichCount" type="number" value="15" min="0" max="50" /></div>
+        <div>
+          <label>AI 이미지 생성</label>
+          <select id="atWithImage">
+            <option value="true">생성 (카드당 과금)</option>
+            <option value="false">생략</option>
+          </select>
+        </div>
+        <div>
+          <label>COLLECT_SECRET (선택)</label>
+          <input id="collectSecret" type="password" placeholder="관리자로 로그인했다면 비워둬도 됩니다" />
+        </div>
+      </div>
+      <p class="hint" style="margin-top:0">
+        카드는 "지금 뜨는 것"만이 아니라 <strong>감시 중인 디저트 전체의 카탈로그</strong>입니다.
+        확산 단계(태동기/상승기/전성기/하락기)로 나뉘고, 홈에 뭘 보여줄지는 프론트가
+        <code>sort=score&amp;limit=10</code>으로 고릅니다. 후보가 밀려 있으면 한 실행 안에서
+        <code>remaining</code>이 0이 될 때까지 최대 8회차까지 이어 만듭니다.<br />
+        <strong>상위 N개에만 공을 들입니다.</strong> 뉴스·블로그를 검색해 근거 기반 문구 + AI 이미지를 붙이고(카드당 과금),
+        나머지는 측정값 기반 문구만 붙입니다(즉시, 무료). 이미지는 첫 회차에만 생성합니다.<br />
+        <strong>문구는 지어내지 않습니다.</strong> 실제 게시물을 읽고 그 안에 있는 내용과 측정 수치만으로 씁니다.
+        근거 링크는 카드에 함께 저장되고, 게시물에 원인이 안 나오면 추측하지 않고 지표만 서술합니다.<br />
+        매 실행마다 <strong>기존 자동 카드도 다시 검사</strong>해서 교차검증에 실패한 건 내리고(<code>retired</code>),
+        다시 통과한 건 되살립니다(<code>restored</code>). 삭제가 아니라 발행 취소라 되돌릴 수 있습니다.
+        에디터가 직접 만든 카드는 건드리지 않습니다.
+      </p>
+
+      <div id="pipelineStatusBox"></div>
+      <pre class="out" id="pipelineOut"></pre>
     </div>
 
     <div class="card">
@@ -307,57 +358,6 @@
       <button class="go" onclick="loadRising()">조회</button>
       <div id="risingList"></div>
       <pre class="out" id="risingOut"></pre>
-    </div>
-
-    <div class="card" style="border-color: var(--accent)">
-      <h2><span class="method">POST</span>/api/admin/trends/auto-refresh — 상위 트렌드 자동 갱신</h2>
-      <p class="hint">
-        급상승 후보 중 신호가 강한 것들을 <strong>트렌드 카드로 자동 생성</strong>하고, 순위에서 밀린 자동 카드는 내립니다.
-        직접 카드를 만들 필요 없이 항상 최신 상위 N개가 노출됩니다.<br /><br />
-        <strong>문구는 지어내지 않습니다.</strong> 각 키워드로 네이버 뉴스·블로그를 검색해 실제 게시물을 읽고,
-        그 안에 있는 내용과 우리가 측정한 수치만으로 요약을 씁니다. 근거가 된 게시물 링크는 카드에 함께 저장돼서
-        사장님이 원문을 확인할 수 있습니다. 게시물에 원인이 안 나오면 원인을 추측하지 않고 지표만 서술합니다.<br /><br />
-        에디터가 직접 만든 카드는 건드리지 않습니다. 다만 <strong>"기존 수동 카드: 내리기"</strong>를 고르면
-        시드 더미까지 함께 내려서 실제 수집 데이터만 남길 수 있습니다(삭제가 아니라 발행 취소라 되살릴 수 있고,
-        자동 카드가 하나도 안 만들어졌다면 사이트가 비지 않도록 내리지 않습니다).
-      </p>
-      <div class="row">
-        <div><label>유지할 카드 수</label><input id="atTopN" type="number" value="10" min="1" max="30" /></div>
-        <div><label>최소 신호 점수</label><input id="atMinSignal" type="number" value="40" min="0" max="100" /></div>
-        <div>
-          <label>AI 이미지 생성</label>
-          <select id="atWithImage">
-            <option value="true">생성 (카드당 과금)</option>
-            <option value="false">생략</option>
-          </select>
-        </div>
-        <div>
-          <label>기존 수동 카드</label>
-          <select id="atRetireManual">
-            <option value="false">유지</option>
-            <option value="true">내리기 (시드 더미 정리)</option>
-          </select>
-        </div>
-      </div>
-      <button class="go" id="autoTrendBtn" onclick="runAutoTrends()">자동 갱신 실행</button>
-      <pre class="out" id="autoTrendOut"></pre>
-    </div>
-
-    <div class="card">
-      <h2><span class="method">POST</span>/api/admin/collect — 수집 배치 즉시 실행</h2>
-      <p class="hint">
-        평소엔 매일 새벽 3시에 node-cron이 자동 실행합니다. 여기서 누르면 기다리지 않고 바로 돌립니다.<br />
-        네이버·유튜브 API를 키워드마다 실제로 호출하기 때문에 <strong>키워드 수에 따라 수십 초 걸릴 수 있고, 유튜브 할당량(키워드당 101 unit / 하루 10,000)을 소모합니다.</strong>
-      </p>
-      <div class="row">
-        <div>
-          <label>COLLECT_SECRET (배포 환경에서만 필요)</label>
-          <input id="collectSecret" type="password" placeholder="Render Environment에 설정한 값" />
-        </div>
-      </div>
-      <p class="hint">입력값은 이 브라우저에만 저장되며(localStorage) 서버로는 요청 헤더로만 전송됩니다. 로컬 개발 환경에서는 비워둬도 됩니다.</p>
-      <button class="go" id="collectBtn" onclick="runCollect()">수집 실행</button>
-      <pre class="out" id="collectOut"></pre>
     </div>
 
   </div>
@@ -550,6 +550,10 @@ async function init() {
   } catch (e) {
     show('detailOut', '카테고리 로딩 실패: ' + e.message);
   }
+
+  // 파이프라인 상태는 DB에 남아 있어서, 페이지를 새로 열어도 직전 실행이 보인다.
+  // 서버가 스케줄로 돌린 것도 여기서 확인된다.
+  pipelineStatus();
 }
 
 const STATUS_LABEL = { emerging: '태동기', rising: '상승기', peak: '전성기', declining: '하락기' };
@@ -692,15 +696,110 @@ async function listKeywords() {
   catch (e) { show('kwOut', '실패: ' + e.message); }
 }
 
-async function discoverKeywords(opts) {
-  show('discoverOut', '발굴 중… (네이버 14회 + 유튜브 4회 호출이라 20~40초 걸립니다)');
+/**
+ * 파이프라인 실행.
+ *
+ * 202로 바로 끝나므로 응답만 보면 아무 일도 안 일어난 것처럼 보인다.
+ * 시작시킨 뒤 5초마다 상태를 폴링해서 끝날 때까지 보여준다.
+ */
+let pipelineTimer = null;
+
+async function runPipeline(opts) {
+  if (!getToken() && !collectSecret()) {
+    return renderPipeline(null, '먼저 로그인하세요 (관리자 권한 필요). 또는 COLLECT_SECRET을 입력하세요.');
+  }
+
+  // 카드 생성 옵션은 화면 입력값에서 읽는다 (전체 실행일 때만 의미가 있다)
+  const body = {
+    ...opts,
+    maxNewCards: Number(document.getElementById('atMaxNew').value) || 60,
+    richCount: Number(document.getElementById('atRichCount').value),
+    withImage: document.getElementById('atWithImage').value === 'true',
+  };
+
+  renderPipeline(null, '시작 요청 중…');
   try {
-    show('discoverOut', await call('/api/admin/keywords/discover', {
+    await call('/api/admin/pipeline', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...authHeaders() },
-      body: JSON.stringify(opts || {}),
-    }));
-  } catch (e) { show('discoverOut', '실패: ' + e.message); }
+      headers: { 'Content-Type': 'application/json', ...authHeaders(), ...secretHeader() },
+      body: JSON.stringify(body),
+    });
+    await pipelineStatus();
+    clearInterval(pipelineTimer);
+    pipelineTimer = setInterval(async () => {
+      const s = await pipelineStatus();
+      if (s && !s.running) {
+        clearInterval(pipelineTimer);
+        loadTrends(); // 카드가 바뀌었을 수 있으니 공개 피드를 다시 읽는다
+      }
+    }, 5000);
+  } catch (e) {
+    renderPipeline(null, '실패: ' + e.message);
+  }
+}
+
+async function pipelineStatus() {
+  try {
+    const s = await call('/api/admin/pipeline', { headers: authHeaders() });
+    renderPipeline(s);
+    return s;
+  } catch (e) {
+    renderPipeline(null, '실패: ' + e.message);
+    return null;
+  }
+}
+
+const STAGE_LABEL = { discover: '발굴', collect: '수집', autoRefresh: '카드 갱신' };
+
+/** 상태 박스 + 원본 JSON을 함께 그린다 */
+function renderPipeline(status, message) {
+  const box = document.getElementById('pipelineStatusBox');
+
+  if (message) {
+    box.innerHTML = `<div style="margin-top:14px;padding:14px 16px;border-radius:8px;
+      background:var(--accent-soft);border:1px solid var(--accent);font-size:14px">${message}</div>`;
+    if (!status) { show('pipelineOut', ''); return; }
+  }
+
+  const run = status?.lastRun;
+  if (!run) {
+    if (!message) {
+      box.innerHTML = `<div style="margin-top:14px;padding:14px 16px;border-radius:8px;
+        background:var(--accent-soft);border:1px solid var(--accent);font-size:14px">
+        아직 실행된 적이 없습니다. 위 버튼을 눌러주세요.</div>`;
+    }
+    show('pipelineOut', '');
+    return;
+  }
+
+  const running = status.running;
+  const d = run.discovery, c = run.collect, a = run.autoTrends;
+  const parts = [];
+  if (d) parts.push(`발굴: 후보 ${d.discovered}개 (신규 ${d.inserted} / 갱신 ${d.updated}) · 다중소스 ${d.multiSource}`);
+  if (c) parts.push(`수집: 네이버 ${c.naverProcessed} · 유튜브 ${c.youtubeProcessed}${c.failed ? ` · 실패 ${c.failed}` : ''}`);
+  if (a) parts.push(`카드: 생성 ${a.created} · 갱신 ${a.refreshed} · 상세 ${a.enriched} · 내림 ${a.retired} · 되살림 ${a.restored} · 남은 후보 ${a.remaining}`);
+
+  const ok = !running && run.errors.length === 0;
+  box.innerHTML = `
+    <div style="margin-top:14px;padding:14px 16px;border-radius:8px;
+                background:${ok ? '#eef6ef' : 'var(--accent-soft)'};
+                border:1px solid ${ok ? '#3f9e5f' : 'var(--accent)'}">
+      <div style="font-size:15px;font-weight:600;margin-bottom:6px">
+        ${running
+          ? `진행 중 — ${STAGE_LABEL[run.currentStage] ?? '준비'} 단계`
+          : ok ? '완료' : `완료 (오류 ${run.errors.length}건)`}
+      </div>
+      <div style="font-size:13px;color:var(--muted);line-height:1.7">
+        ${parts.length ? parts.join('<br />') : '아직 결과 없음'}
+      </div>
+      ${run.errors.length ? `<details style="margin-top:10px;font-size:13px">
+        <summary style="cursor:pointer">오류 ${run.errors.length}건 보기</summary>
+        <div style="margin-top:8px;color:var(--muted);white-space:pre-wrap">${
+          run.errors.map(e => String(e).slice(0, 200)).join('\n')
+        }</div></details>` : ''}
+    </div>`;
+
+  show('pipelineOut', run);
 }
 
 async function loadRising() {
@@ -757,58 +856,20 @@ async function loadRising() {
   } catch (e) { show('risingOut', '실패: ' + e.message); }
 }
 
-async function runAutoTrends() {
-  const btn = document.getElementById('autoTrendBtn');
-  if (!getToken()) return show('autoTrendOut', '먼저 로그인하세요 (관리자 권한 필요).');
-
-  btn.disabled = true;
-  btn.textContent = '갱신 중… (카드당 검색 2회 + 문구 생성)';
-  show('autoTrendOut', '뉴스·블로그 검색 후 문구를 생성하는 중입니다. 1~3분 걸릴 수 있습니다…');
-  try {
-    const r = await call('/api/admin/trends/auto-refresh', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...authHeaders() },
-      body: JSON.stringify({
-        topN: Number(document.getElementById('atTopN').value) || 10,
-        minSignal: Number(document.getElementById('atMinSignal').value) || 40,
-        withImage: document.getElementById('atWithImage').value === 'true',
-        retireManual: document.getElementById('atRetireManual').value === 'true',
-      }),
-    });
-    show('autoTrendOut', r);
-    loadTrends(); // 새 카드가 공개 피드에 바로 보이는지 확인
-  } catch (e) {
-    show('autoTrendOut', '실패: ' + e.message);
-  } finally {
-    btn.disabled = false;
-    btn.textContent = '자동 갱신 실행';
-  }
+/** COLLECT_SECRET 입력값. 매번 다시 입력하지 않도록 브라우저에만 보관한다 */
+function collectSecret() {
+  const v = document.getElementById('collectSecret').value.trim();
+  if (v) localStorage.setItem('trendpick_collect_secret', v);
+  return v;
 }
 
-async function runCollect() {
-  const btn = document.getElementById('collectBtn');
-  const secret = document.getElementById('collectSecret').value.trim();
-  // 매번 다시 입력하지 않도록 브라우저에만 보관 (서버로는 헤더로만 전송)
-  if (secret) localStorage.setItem('trendpick_collect_secret', secret);
-
-  btn.disabled = true;
-  btn.textContent = '수집 중… (수십 초 걸릴 수 있음)';
-  show('collectOut', '네이버·유튜브 API 호출 중…');
-  try {
-    show('collectOut', await call('/api/admin/collect', {
-      method: 'POST',
-      headers: secret ? { 'x-collect-secret': secret } : {},
-    }));
-    loadTrends(); // 점수/단계가 갱신됐을 수 있으니 피드 갱신
-  } catch (e) {
-    show('collectOut',
-      e.message.startsWith('401')
-        ? '실패: ' + e.message + '\n\n배포 환경에는 COLLECT_SECRET이 설정돼 있습니다. Render 대시보드 → Environment에서 값을 복사해 위 칸에 넣어주세요.'
-        : '실패: ' + e.message);
-  } finally {
-    btn.disabled = false;
-    btn.textContent = '수집 실행';
-  }
+/**
+ * 파이프라인은 비밀키 또는 관리자 로그인 중 하나면 통과한다.
+ * 관리자로 로그인했다면 비밀키는 필요 없다.
+ */
+function secretHeader() {
+  const v = collectSecret();
+  return v ? { 'x-collect-secret': v } : {};
 }
 
 function fmtPct(v) {

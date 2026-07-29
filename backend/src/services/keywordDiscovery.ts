@@ -30,19 +30,87 @@ import { discoverVideosByQuery } from './youtubeApi';
  * 음식/음료로 보이는 것만 추려내는 필터로 쓴다.
  */
 const FORMS = [
-  '라떼', '아메리카노', '에이드', '스무디', '프라페', '주스', '쉐이크', '티',
+  '라떼', '아메리카노', '에이드', '스무디', '프라페', '주스', '쉐이크',
   '케이크', '롤케이크', '치즈케이크', '타르트', '마카롱', '쿠키', '스콘',
   '크루아상', '크로플', '베이글', '도넛', '마들렌', '휘낭시에', '푸딩',
   '빵', '토스트', '파이', '무스', '젤라또', '아이스크림', '빙수', '초콜릿',
   '소보로', '단팥', '슈크림', '와플', '팬케이크', '브라우니', '몽블랑',
+  // 차(茶)는 '티' 한 글자로 받으면 안 된다. 아래 NON_FORM_ENDINGS 주석 참고.
+  // 대신 차를 가리키는 게 확실한 조합만 나열한다. 목록이 길어 보여도
+  // 한 글자 '티'를 허용해 챗지피티·트리니티까지 받는 것보다 낫다.
+  '밀크티', '블랙티', '그린티', '허브티', '버블티', '레몬티', '민트티', '아이스티',
+  '자몽티', '유자티', '복숭아티', '얼그레이티', '캐모마일티', '루이보스티',
+  '자스민티', '우롱티', '히비스커스티', '애프터눈티', '보리차', '홍차', '녹차', '말차',
 ];
 
 /**
- * 짧고 흔한 형태 단어는 가게 이름에도 자주 쓰인다(천하제빵, 더벤티, 탄티).
+ * 짧고 흔한 형태 단어는 가게 이름에도 자주 쓰인다(천하제빵, 더벤티).
  * 이런 형태로 끝나는 토큰은 앞부분이 충분히 길 때만 인정한다.
  */
-const SHORT_FORMS = new Set(['티', '빵', '파이', '무스']);
+const SHORT_FORMS = new Set(['빵', '파이', '무스']);
 const MIN_PREFIX_FOR_SHORT_FORM = 2;
+
+/** 앞말 없이 단독으로도 완결된 메뉴 이름인 형태 단어 */
+const STANDALONE_FORMS = new Set([
+  '밀크티', '버블티', '아이스티', '애프터눈티', '홍차', '녹차', '말차', '보리차',
+  '아메리카노', '젤라또', '빙수',
+]);
+
+/**
+ * 형태 단어로 끝나 보이지만 카페 메뉴가 아닌 것들.
+ *
+ * '티'를 형태 단어에서 뺀 이유가 여기 있다. 한 글자라 앞말 길이 제한으로는
+ * 못 막는데, 실제로 이렇게 새어 들어왔다:
+ *   돼지게티(라면), 마티에부산하버시티(호텔), 핏제리아디토티(피자집)
+ * 셋 다 '티' 앞이 2자를 훌쩍 넘어서 기존 규칙을 통과했다.
+ * 그래서 '티'는 버리고 밀크티·블랙티처럼 차를 가리키는 게 확실한 조합만 FORMS에 넣었다.
+ *
+ * 아래 목록은 그 밖의 비(非)디저트 어미다. '편의점 신메뉴'를 검색어에 넣은 뒤로
+ * 라면·간편식이 같이 딸려 오기 때문에 필요하다.
+ */
+const NON_FORM_ENDINGS = [
+  '게티', '라면', '짜장', '짬뽕', '우동', '국수', '도시락', '볶음밥', '김밥',
+  '시티', '호텔', '리조트', '스테이', '아파트', '오피스텔',
+];
+
+/**
+ * 마케팅 카테고리의 "형태".
+ *
+ * 디저트·음료와 어휘 체계가 완전히 다르다. 메뉴 이름은 '재료 + 형태'(흑임자라떼)로
+ * 끝나지만, 마케팅 트렌드는 '활동 + 형식'(굿즈 이벤트, 팝업스토어, 브이로그 챌린지)
+ * 형태라 FORMS로는 하나도 잡히지 않는다. 실제로 마케팅 카드가 0개였던 이유다.
+ */
+const MARKETING_SUFFIXES = [
+  '이벤트', '챌린지', '팝업', '팝업스토어', '콜라보', '굿즈', '마케팅',
+  '프로모션', '클래스', '체험', '스탬프', '쿠폰', '멤버십', '뽑기',
+];
+
+/**
+ * 그 자체로 하나의 마케팅 소재인 단어들.
+ * 접미사와 달리 앞말 없이도 유효하다 ('리유저블컵', '포토존').
+ */
+const MARKETING_TERMS = [
+  '리유저블컵', '텀블러', '키링', '스티커', '포토존', '럭키박스', '선물세트',
+];
+
+/** 접미사형은 앞말이 있어야 인정한다 ('이벤트' 단독은 너무 일반적이라 제외) */
+const MIN_PREFIX_FOR_MARKETING = 2;
+
+/**
+ * 앞말이 붙어 있어도 마케팅 "트렌드"가 아닌 조합.
+ *
+ * MIN_PREFIX_FOR_MARKETING만으로는 못 막는다. 네이버 카페글에는 홍보·광고 글이
+ * 많아서 '무료체험', '경품이벤트', '톡톡이벤트', '업체전용이벤트' 같은 표현이
+ * 대량으로 잡히는데, 앞말이 2자 이상이라 규칙을 통과한다.
+ *
+ * 사장님이 알고 싶은 건 "요즘 카페들이 뭘 하나"이지, 광고 글의 상투어가 아니다.
+ * 판단 기준: 특정 카페/브랜드를 떠올릴 수 있으면 트렌드, 아무 업종에나 붙으면 노이즈.
+ */
+const GENERIC_MARKETING = [
+  '무료체험', '체험단', '경품이벤트', '톡톡이벤트', '업체전용이벤트', '전용이벤트',
+  '오픈이벤트', '가입이벤트', '출석이벤트', '댓글이벤트', '공유이벤트', '홍보이벤트',
+  '할인이벤트', '특가이벤트', '브이이벤트',
+];
 
 /** 제목에서 뽑히면 안 되는 흔한 단어들 */
 const STOPWORDS = new Set([
@@ -84,14 +152,109 @@ const REGION_PREFIXES = [
  * 보면 이미 확산된 뒤에야 잡히므로, 선행 지표로 함께 훑는다.
  */
 export const NAVER_DISCOVERY_QUERIES = [
+  // 디저트·음료
   '카페 신메뉴',
   '요즘 유행 디저트',
   '신상 디저트',
   '베이커리 신상',
   '카페 신상 음료',
+  '디저트 추천',
+  '카페 시그니처 메뉴',
+  '요즘 뜨는 음료',
+  // 편의점 — 국내 디저트 유행은 편의점에서 먼저 터지는 경우가 많다
   '편의점 신메뉴',
   '편의점 신상 디저트',
+  '편의점 신상 음료',
+  // 마케팅 — 어휘 체계가 달라 따로 검색해야 잡힌다
+  '카페 이벤트',
+  '카페 굿즈',
+  '카페 팝업스토어',
+  '카페 마케팅',
+  '베이커리 이벤트',
 ];
+
+/**
+ * 지난 유행을 캐기 위한 검색어 — 위 목록과 **다른 방식으로** 쓴다.
+ *
+ * === 왜 따로 두나 ===
+ *
+ * 위 검색어들은 최신순(sort=date)으로 부른다. 지금 올라오는 글을 봐야
+ * "지금 뜨는 것"을 알 수 있기 때문이다. 그런데 그 방식으로는 지난 유행이
+ * 구조적으로 안 잡힌다 — 흑당버블티는 지금 아무도 글을 안 쓰니까.
+ *
+ * 그래서 이 목록은 **정확도순(sort=sim)으로, 깊게** 부른다. 3년 전 글이든
+ * 상관없이 그 주제에 가장 맞는 글을 가져오는 방식이다. 사람들이 "그때 뭐가
+ * 유행했었지" 하고 정리해둔 글이 걸리고, 거기서 과거 키워드를 얻는다.
+ *
+ * === 검색어를 왜 이렇게 많이 ===
+ *
+ * 회고 글은 표현이 제각각이다. "유행 지난", "한때 유행했던", "추억의",
+ * "그때 그", "안 보이는", "사라진"... 하나로는 몇 건 못 건진다.
+ * 연도를 박은 검색어는 특정 시기 유행을 직접 겨냥한다.
+ *
+ * 이렇게 모은 키워드는 수집 후 검색량이 낮게 나오고, 그게 그대로
+ * 하락기(declining) 카드가 되어 "지난 유행" 섹션을 채운다.
+ */
+export const NAVER_ARCHIVE_QUERIES = [
+  // 일반 회고
+  '유행 지난 디저트',
+  '한때 유행했던 카페 메뉴',
+  '한때 유행했던 디저트',
+  '예전에 유행하던 음료',
+  '요즘 안 보이는 음료',
+  '요즘 안 보이는 디저트',
+  '사라진 카페 메뉴',
+  '단종된 음료',
+  '단종된 디저트',
+  '추억의 디저트',
+  '추억의 음료',
+  '그때 그 시절 카페',
+  '옛날 카페 메뉴',
+  // 정리·회고 글 형식
+  '카페 트렌드 정리',
+  '디저트 유행 변천사',
+  '역대 카페 유행',
+  '디저트 유행 순서',
+  '카페 메뉴 역사',
+  // 연도별 — 특정 시기 유행을 직접 겨냥한다
+  '작년 유행 디저트',
+  '재작년 유행 디저트',
+  '2024 유행 디저트',
+  '2023 유행 디저트',
+  '2022 유행 디저트',
+  '2021 유행 음료',
+  '2020 유행 디저트',
+  '2024 카페 트렌드',
+  '2023 카페 트렌드',
+  '2022 카페 트렌드',
+  // 유행의 흥망을 이야기하는 표현
+  '이제 안 먹는 디저트',
+  '한물간 디저트',
+  '반짝 유행 음료',
+  '유행 끝난 빵',
+];
+
+/**
+ * 쿼리당 몇 페이지까지 파고들지.
+ *
+ * 한 페이지 = 글 100개. 예전엔 1페이지만 봐서 각 쿼리의 **최신 100개**만
+ * 훑었다. 그래서 발굴을 여러 번 돌려도 같은 글을 다시 읽을 뿐 새 키워드가
+ * 거의 안 늘었다(실측: 144개 중 신규 1개).
+ *
+ * 자주 돌리는 것보다 깊게 파는 게 낫다. 블로그 글이 쌓이는 속도보다 발굴
+ * 주기가 빨라서, 10분마다 돌려봐야 같은 100개를 다시 본다. 반면 페이지를
+ * 늘리면 며칠치 글을 한 번에 훑는다.
+ *
+ * 교차검증 통과율도 같이 오른다. 각 소스에서 더 많은 제목을 보면
+ * "블로그와 카페 양쪽에 다 나오는" 키워드가 잡힐 확률이 커지기 때문이다.
+ *
+ * 비용: 5페이지 × 21쿼리 × 2코퍼스 = 210회/실행.
+ * 하루 24회 돌려도 5,040회로 네이버 한도(25,000)의 20%다.
+ */
+const DEFAULT_DISCOVERY_PAGES = Number(process.env.NAVER_DISCOVERY_PAGES) || 5;
+
+/** 네이버 검색 API의 start 상한이 1000이라 10페이지가 물리적 한계다 */
+const MAX_DISCOVERY_PAGES = 10;
 
 /**
  * 유튜브 검색 쿼리. 쿼리당 101 unit이라 네이버(1회당 1건)보다 적게 쓴다.
@@ -102,6 +265,7 @@ export const YOUTUBE_DISCOVERY_QUERIES = [
   '요즘 유행 디저트',
   '신상 디저트 리뷰',
   '편의점 신상',
+  '카페 이벤트 굿즈',
 ];
 
 /**
@@ -146,6 +310,8 @@ export function normalizeKeyword(rawToken: string): string | null {
   if (token.length < 2 || token.length > 20) return null;
   if (STOPWORDS.has(token)) return null;
   if (BRAND_NAMES.has(token)) return null;
+  // 마케팅 분기보다 먼저 검사한다. 어느 경로로도 통과하면 안 되는 어미다.
+  if (NON_FORM_ENDINGS.some((e) => token.endsWith(e))) return null;
 
   // '창원소금빵' -> '소금빵' : 지역명은 메뉴 이름의 일부가 아니다
   for (const region of REGION_PREFIXES) {
@@ -158,6 +324,22 @@ export function normalizeKeyword(rawToken: string): string | null {
   // 지역명을 벗기고 나서 다시 검사 ('서울빵' -> '빵'은 형태 단어 그 자체라 탈락)
   if (token.length < 2) return null;
   if (STOPWORDS.has(token) || BRAND_NAMES.has(token)) return null;
+
+  // 마케팅 소재는 그 자체로 유효하다 ('리유저블컵', '포토존')
+  if (MARKETING_TERMS.some((t) => token.endsWith(t))) return token;
+
+  // 광고 글의 상투어는 앞말이 붙어 있어도 트렌드가 아니다
+  if (GENERIC_MARKETING.includes(token)) return null;
+
+  // 접미사형은 앞말이 붙어야 한다 ('굿즈이벤트' O, '이벤트' X)
+  const marketingSuffix = MARKETING_SUFFIXES.find(
+    (f) => token.endsWith(f) && token.length - f.length >= MIN_PREFIX_FOR_MARKETING
+  );
+  if (marketingSuffix) return token;
+
+  // 형태 단어는 원칙적으로 앞말이 있어야 한다 ('빵' X, '소금빵' O).
+  // 다만 차 종류는 그 자체가 완결된 메뉴 이름이라 단독으로도 인정한다.
+  if (STANDALONE_FORMS.has(token)) return token;
 
   const form = FORMS.find((f) => token.endsWith(f) && token.length > f.length);
   if (!form) return null;
@@ -263,25 +445,45 @@ export async function discoverFromYoutube(
  */
 export async function discoverFromNaver(
   corpus: NaverSearchCorpus = 'blog',
-  queries: string[] = NAVER_DISCOVERY_QUERIES
+  queries: string[] = NAVER_DISCOVERY_QUERIES,
+  pages: number = DEFAULT_DISCOVERY_PAGES,
+  /**
+   * date = 최신순. "지금 뜨는 것"을 찾을 때.
+   * sim  = 정확도순. 지난 유행처럼 오래된 글까지 뒤져야 할 때.
+   */
+  sort: 'date' | 'sim' = 'date'
 ): Promise<DiscoveryResult> {
   const titles: string[] = [];
   const attempts: DiscoveryAttempt[] = [];
+  const pageCount = Math.min(Math.max(pages, 1), MAX_DISCOVERY_PAGES);
 
   for (const query of queries) {
     const target = `naver:${corpus}:${query}`;
-    try {
-      const result = await searchNaver(query, corpus, 100);
-      titles.push(...result.titles);
-      attempts.push({ target, ok: true, count: result.titles.length });
-    } catch (err) {
-      attempts.push({
-        target,
-        ok: false,
-        count: 0,
-        error: err instanceof Error ? err.message : String(err),
-      });
+    let collected = 0;
+    let lastError: string | null = null;
+
+    for (let page = 0; page < pageCount; page += 1) {
+      try {
+        // start는 1, 101, 201... 로 올라간다 (API 상한 1000)
+        const result = await searchNaver(query, corpus, 100, page * 100 + 1, sort);
+        titles.push(...result.titles);
+        collected += result.titles.length;
+
+        // 결과가 100개 미만이면 더 뒤에는 글이 없다는 뜻이라 멈춘다.
+        // 없는 페이지를 계속 부르면 할당량만 쓴다.
+        if (result.titles.length < 100) break;
+      } catch (err) {
+        // 한 페이지가 실패해도 앞에서 모은 건 살린다. 뒤 페이지는 포기한다
+        lastError = err instanceof Error ? err.message : String(err);
+        break;
+      }
     }
+
+    attempts.push(
+      lastError && collected === 0
+        ? { target, ok: false, count: 0, error: lastError }
+        : { target, ok: true, count: collected }
+    );
   }
 
   return {

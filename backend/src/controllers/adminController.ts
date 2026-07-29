@@ -3,12 +3,8 @@ import { query } from '../db/client';
 import { ApiError } from '../middlewares/errorHandler';
 import { runDailyCollect } from '../jobs/dailyCollect';
 import { refreshAutoTrends } from '../jobs/autoTrends';
-import {
-  DiscoveredKeyword,
-  DiscoveryResult,
-  discoverFromNaver,
-  discoverFromYoutube,
-} from '../services/keywordDiscovery';
+import { runKeywordDiscovery } from '../jobs/discoverKeywords';
+import { getPipelineStatus, isPipelineRunning, runPipeline } from '../jobs/pipeline';
 import { generateTrendImage } from '../services/imageGeneration';
 
 
@@ -145,102 +141,70 @@ export async function listKeywords(req: Request, res: Response) {
  * 그 결과는 GET /api/admin/keywords/rising 으로 확인한다.
  */
 export async function discoverKeywords(req: Request, res: Response) {
-  const useYoutube = req.body?.youtube !== false;
-  const useBlog = req.body?.blog !== false;
-  const useCafe = req.body?.cafe !== false;
-
-  const discovered: DiscoveredKeyword[] = [];
-  const errors: string[] = [];
-  const sourceReports: Record<string, unknown> = {};
-
-  /** 소스 하나를 실행하고 실패를 응답에 담는다 (조용히 넘어가지 않도록) */
-  async function run(name: string, fn: () => Promise<DiscoveryResult>) {
-    try {
-      const result = await fn();
-      discovered.push(...result.keywords);
-      sourceReports[name] = {
-        titlesScanned: result.titlesScanned,
-        extracted: result.keywords.length,
-        attempts: result.attempts,
-      };
-      for (const a of result.attempts.filter((x) => !x.ok)) {
-        errors.push(`${a.target} 조회 실패: ${a.error}`);
-      }
-      if (result.titlesScanned === 0) {
-        errors.push(`${name}에서 제목을 하나도 가져오지 못했습니다. API 키/할당량을 확인하세요.`);
-      }
-    } catch (err) {
-      errors.push(`${name} 발굴 실패: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  }
-
-  if (useBlog) await run('blog', () => discoverFromNaver('blog'));
-  if (useCafe) await run('cafe', () => discoverFromNaver('cafearticle'));
-  if (useYoutube) await run('youtube', () => discoverFromYoutube());
-
-  /**
-   * 소스별로 합치되 "어느 소스에서 나왔는지"를 보존한다.
-   *
-   * 한 소스에서만 잡힌 키워드는 그 소스의 편향일 수 있다. 개인 카페·빵집
-   * 이름이 대개 블로그 한 곳에서만 나온다는 점에서, 소스 수는 가게 이름
-   * 노이즈를 걸러내는 지표로도 쓰인다.
-   */
-  const merged = new Map<
-    string,
-    { sources: Set<string>; bySource: Record<string, number>; total: number }
-  >();
-
-  for (const d of discovered) {
-    const entry = merged.get(d.keyword) ?? { sources: new Set<string>(), bySource: {}, total: 0 };
-    entry.sources.add(d.source);
-    entry.bySource[d.source] = (entry.bySource[d.source] ?? 0) + d.mentionCount;
-    entry.total += d.mentionCount;
-    merged.set(d.keyword, entry);
-  }
-
-  let inserted = 0;
-  let updated = 0;
-
-  for (const [keyword, entry] of merged) {
-    const sourceList = [...entry.sources];
-    // keyword는 VARCHAR(50) UNIQUE.
-    // 이미 있으면 언급 수치만 갱신한다 — 매번 새 빈도를 반영해야 "지금 화제인지"를
-    // 판단할 수 있기 때문. trend_id는 건드리지 않는다(에디터가 연결해둔 것 보존).
-    const rows = await query<{ id: number; is_new: boolean }>(
-      `INSERT INTO keywords (keyword, source, sources, mention_count, mention_by_source, discovered_at)
-       VALUES ($1, $2, $3, $4, $5::jsonb, now())
-       ON CONFLICT (keyword) DO UPDATE
-         SET sources           = EXCLUDED.sources,
-             mention_count     = EXCLUDED.mention_count,
-             mention_by_source = EXCLUDED.mention_by_source,
-             discovered_at     = now()
-       RETURNING id, (xmax = 0) AS is_new`,
-      [
-        keyword.slice(0, 50),
-        sourceList[0],
-        sourceList,
-        entry.total,
-        JSON.stringify(entry.bySource),
-      ]
-    );
-    if (rows[0]?.is_new) inserted += 1;
-    else updated += 1;
-  }
-
-  const multiSource = [...merged.values()].filter((e) => e.sources.size >= 2).length;
+  const summary = await runKeywordDiscovery({
+    youtube: req.body?.youtube !== false,
+    blog: req.body?.blog !== false,
+    cafe: req.body?.cafe !== false,
+  });
 
   res.json({
-    discovered: merged.size,
-    inserted,
-    updated,
-    multiSource,
-    errors,
-    sources: sourceReports,
+    ...summary,
     message:
-      `후보 ${merged.size}개 (신규 ${inserted}, 갱신 ${updated}). ` +
-      `이 중 ${multiSource}개는 2개 이상 소스에서 잡혔습니다 — 한 소스에서만 나온 것보다 신뢰도가 높습니다. ` +
+      `후보 ${summary.discovered}개 (신규 ${summary.inserted}, 갱신 ${summary.updated}). ` +
+      `이 중 ${summary.multiSource}개는 이번 실행에서 2개 이상 소스에 동시에 잡혔습니다. ` +
       `검색량은 다음 수집 배치가 채우며, 결과는 GET /api/admin/keywords/rising 에서 확인하세요.`,
   });
+}
+
+/**
+ * POST /api/admin/pipeline
+ * 발굴 → 수집 → 카드 갱신을 한 번에 돌린다.
+ *
+ * 수 분씩 걸리므로 **기다리지 않고 202로 즉시 응답**한다. 외부 스케줄러
+ * (cron-job.org)는 보통 30초에서 끊기기 때문에, 동기로 처리하면 작업이
+ * 정상 완료돼도 스케줄러 쪽에는 실패로 기록된다.
+ *
+ * 진행 상황은 GET /api/admin/pipeline 으로 확인한다.
+ *
+ * 보호는 라우터의 requireSecretOrAdmin이 담당한다.
+ * 외부 스케줄러는 x-collect-secret, 데모 페이지는 로그인 토큰을 쓴다.
+ */
+export async function triggerPipeline(req: Request, res: Response) {
+  if (isPipelineRunning()) {
+    res.status(409).json({ message: '이미 실행 중입니다.', status: await getPipelineStatus() });
+    return;
+  }
+
+  const options = {
+    discover: req.body?.discover !== false,
+    youtube: req.body?.youtube === true,
+    // 지난 유행 발굴 — 회고 검색어를 정확도순으로 깊게 훑는다
+    archive: req.body?.archive === true,
+    pages: req.body?.pages ? Math.min(Math.max(Number(req.body.pages), 1), 10) : undefined,
+    collect: req.body?.collect === true,
+    autoRefresh: req.body?.autoRefresh === true,
+    withImage: req.body?.withImage !== false,
+    maxNewCards: Math.min(Number(req.body?.maxNewCards ?? 60), 200),
+    richCount: Math.min(Number(req.body?.richCount ?? 15), 50),
+  };
+
+  // 응답을 기다리게 하지 않는다. 실패는 runPipeline 안에서 잡아 상태에 기록된다.
+  void runPipeline('api', options).catch((err) =>
+    console.error('[pipeline] API 트리거 실패:', err)
+  );
+
+  res.status(202).json({
+    message: '파이프라인을 시작했습니다. GET /api/admin/pipeline 으로 진행 상황을 확인하세요.',
+    options,
+  });
+}
+
+/**
+ * GET /api/admin/pipeline — 진행 중이거나 마지막으로 끝난 실행 상태.
+ * 메모리에 없으면 DB에서 읽으므로 재배포·슬립 후에도 직전 실행이 보인다.
+ */
+export async function getPipeline(_req: Request, res: Response) {
+  res.json(await getPipelineStatus());
 }
 
 /**
@@ -377,14 +341,20 @@ export async function listRisingKeywords(req: Request, res: Response) {
  * 에디터가 직접 만든 카드(is_auto=false)의 문구는 덮어쓰지 않는다.
  */
 export async function triggerAutoTrends(req: Request, res: Response) {
-  const topN = Math.min(Number(req.body?.topN ?? 10), 30);
-  const minSignal = Number(req.body?.minSignal ?? 40);
-  // 이미지 생성은 호출당 과금이라 기본은 켜두되 끌 수 있게 한다
-  const withImage = req.body?.withImage !== false;
-  // 시드 더미를 걷어내고 실제 수집 데이터만 보이게 할 때 사용. 기본은 안전하게 false
-  const retireManual = req.body?.retireManual === true;
-
-  const summary = await refreshAutoTrends(topN, minSignal, withImage, retireManual);
+  const summary = await refreshAutoTrends({
+    // 한 번에 다 만들지 않는다. 요청이 끊기지 않을 만큼만 처리하고,
+    // 남은 개수(remaining)를 응답에 담아 다시 실행할 수 있게 한다.
+    maxNewCards: Math.min(Number(req.body?.maxNewCards ?? 60), 200),
+    // 근거 수집 + LLM 문구 + AI 이미지를 붙일 상위 카드 수 (카드당 과금)
+    richCount: Math.min(Number(req.body?.richCount ?? 15), 50),
+    minIndex: Number(req.body?.minIndex ?? 5),
+    minMentions: Number(req.body?.minMentions ?? 2),
+    // 소스 2개 이상만 카드로. 호텔·라면 등 카페 트렌드가 아닌 것을 걸러낸다
+    minSources: Number(req.body?.minSources ?? 2),
+    withImage: req.body?.withImage !== false,
+    // 시드 더미를 걷어내고 실제 수집 데이터만 보이게 할 때 사용. 기본은 안전하게 false
+    retireManual: req.body?.retireManual === true,
+  });
   res.json({ summary });
 }
 
@@ -398,15 +368,10 @@ export async function triggerAutoTrends(req: Request, res: Response) {
  *     (Render 무료 플랜은 15분 미사용 시 슬립되어 node-cron이 뜨지 않기 때문)
  *
  * 이 API는 호출할 때마다 네이버·유튜브 할당량을 실제로 소모하므로,
- * COLLECT_SECRET이 설정돼 있으면 x-collect-secret 헤더가 일치해야만 실행한다.
- * 미설정 시에는 기존처럼 그냥 열려 있다(로컬 개발 편의 + 하위 호환).
+ * 라우터의 requireSecretOrAdmin으로 보호한다
+ * (스케줄러는 x-collect-secret, 데모 페이지는 로그인 토큰).
  */
-export async function triggerCollect(req: Request, res: Response) {
-  const secret = process.env.COLLECT_SECRET;
-  if (secret && req.header('x-collect-secret') !== secret) {
-    throw new ApiError(401, '수집 실행 권한이 없습니다.');
-  }
-
+export async function triggerCollect(_req: Request, res: Response) {
   const summary = await runDailyCollect();
   res.json({ summary });
 }

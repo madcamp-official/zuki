@@ -155,7 +155,9 @@ export async function getTrendDetail(req: Request, res: Response) {
        JOIN keyword_metrics km ON km.keyword_id = k.id
       WHERE k.trend_id = $1
         AND km.source_type = 'naver'
-        AND km.metric_type = 'search_index'
+        -- 원본 일별 값을 쓴다. search_index는 7일 평균이라 수집 횟수만큼(하루 1개)
+        -- 밖에 없어서 그래프가 그려지지 않는다.
+        AND km.metric_type = 'search_index_daily'
       ORDER BY km.collected_date ASC`,
     [id]
   );
