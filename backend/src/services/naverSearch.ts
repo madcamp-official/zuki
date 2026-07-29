@@ -17,10 +17,20 @@ const SEARCH_BASE = 'https://openapi.naver.com/v1/search';
 
 export type NaverSearchCorpus = 'blog' | 'cafearticle' | 'news';
 
+export interface NaverSearchItem {
+  title: string;
+  /** 본문 발췌. 검색어 주변 문맥이 담겨 있어 "왜 뜨는지"의 단서가 된다 */
+  description: string;
+  link: string;
+  postDate: string | null;
+}
+
 export interface NaverSearchResult {
   corpus: NaverSearchCorpus;
   query: string;
   titles: string[];
+  /** 제목 + 본문 발췌 + 링크. 근거 수집용 */
+  items: NaverSearchItem[];
   /**
    * 게시일(YYYY-MM-DD) 목록. 블로그 코퍼스만 postdate를 준다.
    * 카페글은 cafename/cafeurl만 오고 날짜가 없어 빈 배열이 된다.
@@ -79,19 +89,27 @@ export async function searchNaver(
 
   const json = (await res.json()) as {
     total?: number;
-    items?: { title: string; postdate?: string }[];
+    items?: { title: string; description?: string; link?: string; postdate?: string }[];
   };
-  const items = json.items ?? [];
+  const rawItems = json.items ?? [];
+
+  const toIsoDate = (d?: string) =>
+    d && /^\d{8}$/.test(d) ? `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}` : null;
 
   return {
     corpus,
     query,
-    titles: items.map((i) => stripHtml(i.title)),
+    titles: rawItems.map((i) => stripHtml(i.title)),
+    items: rawItems.map((i) => ({
+      title: stripHtml(i.title),
+      description: stripHtml(i.description ?? ''),
+      link: i.link ?? '',
+      postDate: toIsoDate(i.postdate),
+    })),
     // postdate는 'YYYYMMDD' 형식으로 온다
-    postDates: items
-      .map((i) => i.postdate)
-      .filter((d): d is string => !!d && /^\d{8}$/.test(d))
-      .map((d) => `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}`),
+    postDates: rawItems
+      .map((i) => toIsoDate(i.postdate))
+      .filter((d): d is string => d !== null),
     total: json.total ?? 0,
   };
 }
@@ -134,7 +152,7 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
  */
 export async function measureMentionTrend(
   keyword: string,
-  maxPages = 3
+  maxPages = 10 // API 상한(start<=1000)까지. 검색 API는 하루 25,000회라 여유롭다
 ): Promise<MentionTrend> {
   const dates: string[] = [];
   let apiCalls = 0;
@@ -175,14 +193,31 @@ export async function measureMentionTrend(
     ? Math.round((today.getTime() - oldestSeen.getTime()) / MS_PER_DAY)
     : 0;
 
+  /**
+   * 증가율은 아래 두 조건을 모두 만족할 때만 낸다.
+   *
+   *  1) 14일 구간을 실제로 덮었을 것 (windowDays >= 14)
+   *     인기 키워드는 1,000건이 며칠치밖에 안 돼 이전 7일에 도달하지 못한다.
+   *     그 경우 previousCount가 0이 되어 "무한 증가"처럼 보이는데, 사실은
+   *     데이터가 없는 것이다.
+   *
+   *  2) 표본이 최소한은 될 것 (양쪽 합계 >= MIN_SAMPLE)
+   *     글 5건으로 계산한 "+66.7%"는 노이즈다. 값을 만들어내느니 null이 낫다.
+   *
+   * 7일 단위로 비교하는 이유는 요일 효과 때문이다. 블로그 게시량은 주말·평일
+   * 편차가 커서, 창 길이가 7의 배수가 아니면 요일이 상쇄되지 않는다.
+   */
+  const MIN_SAMPLE = 10;
+  const sample = recentCount + previousCount;
+  const reliable = windowDays >= 14 && sample >= MIN_SAMPLE && previousCount > 0;
+
   return {
     keyword,
     recentCount,
     previousCount,
-    growthRate:
-      previousCount > 0
-        ? Math.round(((recentCount - previousCount) / previousCount) * 1000) / 10
-        : null,
+    growthRate: reliable
+      ? Math.round(((recentCount - previousCount) / previousCount) * 1000) / 10
+      : null,
     windowDays,
     postsScanned: dates.length,
     apiCalls,

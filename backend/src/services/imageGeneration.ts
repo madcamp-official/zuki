@@ -2,7 +2,23 @@ import fs from 'fs';
 import path from 'path';
 import OpenAI from 'openai';
 
-// frontend/public/generated/trends/에 저장 (스크립트 scripts/generate-trend-images.ts와 동일 경로 공유)
+/**
+ * 생성한 이미지는 Supabase Storage에 올린다.
+ *
+ * 예전에는 frontend/public/generated/trends/ 아래에 파일로 썼는데 배포 환경에서
+ * 동작하지 않았다:
+ *   - Render는 backend/만 배포하므로 frontend/ 폴더가 존재하지 않는다
+ *   - 프론트(Vercel)는 다른 서버라 백엔드 디스크의 파일을 읽을 수 없다
+ *   - Render 디스크는 재배포 시 초기화되어 이미지가 사라진다
+ *
+ * Storage에 올리면 공개 URL이 생겨 프론트가 어디에 있든 접근 가능하고,
+ * 재배포와 무관하게 남는다.
+ *
+ * SUPABASE_SERVICE_ROLE_KEY가 없으면(로컬 개발 등) 기존처럼 파일로 저장한다.
+ */
+const STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET ?? 'trend-images';
+
+// 로컬 폴백 경로 (스크립트 scripts/generate-trend-images.ts와 동일 경로 공유)
 const OUTPUT_DIR = path.resolve(__dirname, '../../../frontend/public/generated/trends');
 
 const COMMON_STYLE =
@@ -71,8 +87,42 @@ function getClient(): OpenAI {
 }
 
 /**
- * 트렌드 하나에 대해 OpenAI 이미지를 생성해 frontend/public/generated/trends/에 저장하고
- * 프론트에서 접근 가능한 상대 경로(/generated/trends/trend-{id}.png)를 반환한다.
+ * Supabase Storage에 업로드하고 공개 URL을 반환한다.
+ *
+ * 업로드에는 service_role 키가 필요하다(버킷 쓰기 정책이 service_role 전용).
+ * 이 키는 RLS를 우회하는 최고 권한이므로 절대 브라우저에 노출하면 안 된다.
+ */
+async function uploadToStorage(fileName: string, buffer: Buffer): Promise<string> {
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!supabaseUrl || !serviceKey) {
+    throw new Error('SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY가 필요합니다.');
+  }
+
+  const objectPath = `${STORAGE_BUCKET}/${fileName}`;
+  const res = await fetch(`${supabaseUrl}/storage/v1/object/${objectPath}`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${serviceKey}`,
+      'Content-Type': 'image/png',
+      // 같은 트렌드를 다시 생성하면 덮어쓴다
+      'x-upsert': 'true',
+    },
+    body: new Uint8Array(buffer),
+  });
+
+  if (!res.ok) {
+    throw new Error(`Storage 업로드 실패: ${res.status} ${(await res.text()).slice(0, 200)}`);
+  }
+
+  return `${supabaseUrl}/storage/v1/object/public/${objectPath}`;
+}
+
+/**
+ * 트렌드 하나에 대해 OpenAI로 이미지를 생성하고 접근 가능한 URL을 반환한다.
+ *
+ * 기본은 Supabase Storage 업로드(공개 URL). service_role 키가 없으면
+ * 로컬 파일로 저장하고 상대 경로를 돌려준다 — 로컬 개발 편의를 위한 폴백이다.
  */
 export async function generateTrendImage(
   trendId: string | number,
@@ -95,9 +145,19 @@ export async function generateTrendImage(
     throw new Error('OpenAI 응답에 이미지 데이터가 없습니다.');
   }
 
-  fs.mkdirSync(OUTPUT_DIR, { recursive: true });
+  const buffer = Buffer.from(b64, 'base64');
   const fileName = `trend-${trendId}.png`;
-  fs.writeFileSync(path.join(OUTPUT_DIR, fileName), Buffer.from(b64, 'base64'));
 
+  if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    return uploadToStorage(fileName, buffer);
+  }
+
+  // 로컬 폴백: 프론트 public 폴더에 직접 쓴다 (배포 환경에서는 동작하지 않음)
+  console.warn(
+    '[imageGeneration] SUPABASE_SERVICE_ROLE_KEY가 없어 로컬 파일로 저장합니다. ' +
+      '배포 환경에서는 이 경로가 서빙되지 않으니 키를 설정하세요.'
+  );
+  fs.mkdirSync(OUTPUT_DIR, { recursive: true });
+  fs.writeFileSync(path.join(OUTPUT_DIR, fileName), buffer);
   return `/generated/trends/${fileName}`;
 }

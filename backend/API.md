@@ -140,6 +140,17 @@
 }
 ```
 
+자동 생성 카드는 `is_auto: true`와 함께 **`evidence`** 를 돌려줍니다 — 문구의 근거가 된 실제 게시물입니다.
+
+```json
+"evidence": [
+  { "title": "편의점 3사, 이달 신제품으로...", "excerpt": "...",
+    "link": "https://...", "date": "2026-07-25", "corpus": "news" }
+]
+```
+
+상세 화면에 "관련 기사" 같은 섹션으로 링크를 걸어주면, 사장님이 원문을 직접 확인할 수 있습니다.
+
 > **"검색량 추이" 그래프는 `searchIndexHistory`를 쓰세요.**
 > `scoreHistory`는 랭킹 점수 이력이라 "네이버 데이터랩 기준 상대 검색지수(0~100)"라는 화면 라벨과 맞지 않습니다.
 
@@ -338,6 +349,60 @@ npm run grant:admin -- someone@example.com editor    # editor 부여
 
 `title`, `categoryId`는 필수. 없으면 `400`.
 
+### POST /api/admin/trends/auto-refresh
+
+급상승 후보 중 신호가 강한 것들을 **트렌드 카드로 자동 생성**하고, 순위에서 밀린 자동 카드는 내립니다. 항상 최신 상위 N개가 노출됩니다.
+
+```json
+{ "topN": 10, "minSignal": 40, "withImage": true }
+```
+
+| 항목 | 기본값 | 설명 |
+|---|---|---|
+| `topN` | 10 (최대 30) | 유지할 자동 카드 수 |
+| `minSignal` | 40 | 이 점수 미만은 카드로 만들지 않음 (노이즈 배제) |
+| `withImage` | true | OpenAI 이미지 생성. 카드당 과금되므로 끌 수 있음 |
+
+```json
+{
+  "summary": {
+    "considered": 10, "created": 6, "refreshed": 3, "retired": 2,
+    "trends": [
+      { "id": 41, "keyword": "씬쿠키", "signal": 68.3, "generated": true, "evidenceCount": 8 }
+    ],
+    "errors": []
+  }
+}
+```
+
+**문구는 지어내지 않습니다.**
+
+각 키워드로 네이버 **뉴스·블로그를 검색해 실제 게시물을 읽고**, 그 안에 있는 내용과 우리가 측정한 수치만으로 요약을 씁니다.
+
+```
+X "최근 일본 디저트 유행과 맞물려"        <- 아무 자료에도 없는 창작
+O "편의점 3사가 이달 신제품으로 출시했고"  <- 뉴스 기사에 실제로 있는 내용
+O "최근 7일 블로그 게시량이 2배 늘었습니다" <- 우리가 측정한 값
+```
+
+게시물에 원인이 안 나오면 **추측하지 않고 지표만 서술**합니다. 근거가 된 게시물 링크는 카드의 `evidence` 필드에 저장되어 `GET /api/trends/:id`로 조회할 수 있습니다 — 사장님이 원문을 확인할 수 있어야 신뢰할 수 있는 정보가 되기 때문입니다.
+
+**에디터가 직접 만든 카드(`is_auto=false`)의 문구는 덮어쓰지 않습니다.** 순위에서 밀린 자동 카드는 삭제가 아니라 발행 취소(`is_published=false`)되므로, 다시 순위에 들면 되살아납니다.
+
+> OpenAI 키(`OPENAI_API_KEY`)가 없으면 LLM 대신 규칙 기반 문구로 폴백합니다(`generated: false`). 근거 링크는 그래도 저장됩니다.
+
+**이미지는 Supabase Storage에 올라갑니다.**
+
+`gpt-image-1`로 생성한 뒤 `trend-images` 공개 버킷에 업로드하고, `image_url`에 공개 URL을 넣습니다.
+
+```
+https://bnghhjikybnoztaxjuey.supabase.co/storage/v1/object/public/trend-images/trend-42.png
+```
+
+업로드에는 `SUPABASE_SERVICE_ROLE_KEY`가 필요합니다(버킷 쓰기 정책이 service_role 전용). **이 키는 RLS를 우회하는 최고 권한이라 절대 브라우저에 노출하면 안 됩니다** — 백엔드 환경변수로만 쓰세요.
+
+키가 없으면 로컬 파일(`frontend/public/generated/trends/`)로 폴백합니다. 다만 배포 환경에서는 그 경로가 서빙되지 않습니다 — Render는 `backend/`만 배포하고 프론트는 별도 서버라, 예전 방식은 배포 환경에서 이미지가 보이지 않았습니다.
+
 ### PATCH /api/admin/trends/:id/publish
 
 초안 → 발행 전환. 이거 해야 `GET /api/trends`에 나타남.
@@ -360,29 +425,45 @@ npm run grant:admin -- someone@example.com editor    # editor 부여
 
 ### POST /api/admin/keywords/discover
 
-후보 키워드를 발굴해 등록합니다. 두 소스 모두 **지금 실제로 올라오고 있는 콘텐츠**에서 가져옵니다.
+후보 키워드를 발굴해 등록합니다. 세 소스 모두 **지금 실제로 올라오고 있는 콘텐츠**에서 가져옵니다.
 
 ```json
-{ "youtube": true, "naver": true }
+{ "blog": true, "cafe": true, "youtube": true }
 ```
 
 | 소스 | 내용 | 비용 |
 |---|---|---|
-| `youtube` | 인기 급상승 영상 제목 (`chart=mostPopular`) | 4 unit |
-| `naver` | 블로그·카페글 최신 포스트 제목 (`카페 신메뉴` 등 5개 쿼리 × 2개 코퍼스) | 검색 API 10회 (하루 25,000회 한도) |
+| `blog` | 네이버 블로그 최신 포스트 제목 (7개 쿼리) | 검색 API 7회 |
+| `cafe` | 네이버 카페글 최신 포스트 제목 (7개 쿼리) | 검색 API 7회 |
+| `youtube` | 주제 검색 + 최근 30일 영상 (4개 쿼리) | 404 unit |
+
+네이버 검색 API는 하루 25,000회, 유튜브는 10,000 unit 한도라 여유롭습니다.
+
+검색어에는 `카페 신메뉴`, `요즘 유행 디저트` 외에 **`편의점 신메뉴`**도 포함됩니다. 국내 디저트·음료 유행은 편의점에서 먼저 터지고 카페로 넘어오는 경우가 많아(두바이초콜릿) 선행 지표로 씁니다.
+
+**왜 소스를 따로 부르나 — 교차 검증**
+
+어떤 소스도 편향이 있습니다. 블로그는 체험단·협찬이 많고, 카페글은 카페별로 연령대가 갈리며, 유튜브는 채널 구독자층이 다릅니다. 한 곳에서만 잡힌 키워드는 그 소스의 편향일 수 있고, 여러 곳에서 동시에 잡히면 실제 트렌드일 확률이 높습니다.
+
+개인 카페·빵집 이름(`천하제빵`, `미켈란젤라또`)이 대개 블로그 한 곳에서만 나온다는 점에서, 이 방식은 **가게 이름 노이즈도 함께 걸러줍니다.**
+
+유튜브는 특정 채널을 고정하지 않습니다 — 고르는 사람의 취향이 그대로 편향이 되기 때문입니다. 대신 매번 주제 검색으로 "지금 조회수가 잘 나오는 영상"을 찾아 영향력 있는 채널이 자연스럽게 뽑히게 합니다.
 
 응답:
 ```json
 {
-  "discovered": 87, "inserted": 74, "skipped": 13,
+  "discovered": 87, "inserted": 74, "updated": 13,
+  "multiSource": 21,
   "errors": [],
   "sources": {
-    "youtube": { "titlesScanned": 150, "extracted": 12,
-                 "attempts": [{ "target": "youtube:all", "ok": true, "count": 50 }] },
-    "naver":   { "titlesScanned": 1000, "extracted": 75, "attempts": [...] }
+    "blog":    { "titlesScanned": 700, "extracted": 62, "attempts": [...] },
+    "cafe":    { "titlesScanned": 680, "extracted": 41, "attempts": [...] },
+    "youtube": { "titlesScanned": 190, "extracted": 18, "attempts": [...] }
   }
 }
 ```
+
+`multiSource`는 2개 이상 소스에서 잡힌 키워드 수입니다. 이 값이 높을수록 발굴 품질이 좋습니다.
 
 `sources.*.attempts`에 소스별 성공/실패가 전부 담깁니다. 실패해도 다른 소스는 계속 진행하되, 실패 사유는 `errors`에 남으니 확인하세요.
 
@@ -403,17 +484,23 @@ npm run grant:admin -- someone@example.com editor    # editor 부여
 | 파라미터 | 기본값 | 설명 |
 |---|---|---|
 | `limit` | 30 (최대 200) | 개수 |
-| `minIndex` | 1 | 최소 검색지수 |
+| `minIndex` | 5 | 최소 검색지수 (정렬엔 안 쓰고 하한선으로만) |
+| `minMentions` | 2 | 최소 언급 횟수 |
+| `minSources` | 1 | 최소 소스 수. 2로 올리면 교차 검증된 것만 |
 | `includeLinked` | false | 이미 카드가 있는 키워드 포함 여부 |
 | `excludeStaples` | true | 상시 메뉴 제외 |
 | `stapleIndex` / `stapleGrowth` | 40 / 5 | 검색지수 40 이상인데 증감률 5% 미만이면 상시 메뉴로 간주 |
+| `excludeSeasonal` | true | 계절 메뉴 제외 (작년 같은 달에도 높았던 것) |
 
 ```json
 {
   "keywords": [
-    { "id": 42, "keyword": "흑임자라떼", "source": "naver", "trend_id": null,
-      "mention_count": 12, "search_index": "34.20", "growth_rate": 68.4,
-      "collected_date": "2026-07-28", "trend_signal": 71.2 }
+    { "id": 42, "keyword": "두바이와플", "trend_id": null,
+      "sources": ["blog", "cafe", "youtube"], "source_count": 3,
+      "mention_count": 24, "mention_by_source": { "blog": 12, "cafe": 8, "youtube": 4 },
+      "mention_growth_rate": 182.5, "growth_rate": 41.2, "yoy_growth_rate": 640.7,
+      "view_velocity": 38400, "search_index": "34.20",
+      "is_seasonal": false, "mention_window_days": 18, "trend_signal": 78.4 }
   ]
 }
 ```
@@ -421,17 +508,25 @@ npm run grant:admin -- someone@example.com editor    # editor 부여
 **`trend_signal` 내림차순으로 정렬됩니다.**
 
 ```
-언급 빈도(50점 만점) + 증감률(50점 만점)
+언급 증가율(45점) + 검색 증가율(30점) + 교차검증(25점)
 ```
 
-**검색지수는 정렬에 쓰지 않습니다.** 검색지수가 높다는 건 이미 자리잡았다는 뜻이라, 이걸 기준으로 정렬하면 에그타르트·밀크티 같은 스테디셀러가 상위를 차지해 트렌드 발굴이 되지 않습니다. 우리가 찾는 건 **"최근 글에 자주 나오는데 검색량은 아직 낮은 것"** — 태동기 신호입니다.
+**검색지수는 정렬에 쓰지 않습니다.** 검색지수가 높다는 건 이미 자리잡았다는 뜻이라, 이걸 기준으로 정렬하면 에그타르트·밀크티 같은 스테디셀러가 상위를 차지해 트렌드 발굴이 되지 않습니다.
 
 | 필드 | 의미 |
 |---|---|
-| `mention_count` | 발굴 시 최근 글 제목에서 등장한 횟수 |
-| `growth_rate` | 네이버 검색지수 증감률(%). 최근 7일 평균 대 이전 7일 평균 |
-| `search_index` | 현재 검색지수(0~100). 참고용이며 정렬엔 미사용 |
-| `trend_signal` | 위 두 신호를 합친 0~100 점수 |
+| `sources` / `source_count` | 어느 소스에서 잡혔는지. 많을수록 신뢰도 높음 |
+| `mention_by_source` | 소스별 언급 횟수 |
+| `mention_growth_rate` | 블로그 게시 속도 변화(%). 최근 7일 대 이전 7일 |
+| `growth_rate` | 네이버 검색지수 증감률(%) |
+| `yoy_growth_rate` | 작년 같은 달 대비 증감률(%). 클수록 올해 새로 뜨는 것 |
+| `view_velocity` | 최근 30일 유튜브 영상들의 일평균 조회수 합 |
+| `is_seasonal` | 작년 같은 달에도 비슷하게 높았으면 true (계절 메뉴) |
+| `mention_window_days` | 언급 측정에 확보한 기간(일) |
+| `search_index` | 현재 검색지수(0~100). 필터로만 사용 |
+
+> **`null`이면 계산을 포기한 것입니다.** 억지로 값을 내지 않습니다.
+> `mention_growth_rate`는 14일 구간을 못 덮었거나 표본이 10건 미만일 때, `yoy_growth_rate`는 작년 지수가 1 미만일 때 `null`이 됩니다. 인기 키워드는 블로그 글 1,000건(API 상한)이 며칠치밖에 안 돼 이전 7일에 도달하지 못하는데, 그때 나오는 숫자는 "무한 증가"처럼 보이지만 사실 데이터가 없는 것입니다.
 
 ### POST /api/admin/collect
 
