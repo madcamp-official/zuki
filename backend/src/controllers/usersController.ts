@@ -74,7 +74,7 @@ export async function updateMyProfile(req: Request, res: Response) {
 export async function listBookmarks(req: Request, res: Response) {
   const userId = requireUserId(req);
   const rows = await query(
-    `SELECT t.id, t.title, t.summary, t.status, t.image_url, b.created_at AS bookmarked_at
+    `SELECT t.id, t.title, t.summary, t.status, t.score, t.image_url, b.created_at AS bookmarked_at
        FROM bookmarks b
        JOIN trends t ON t.id = b.trend_id
       WHERE b.user_id = $1

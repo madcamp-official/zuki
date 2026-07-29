@@ -1,5 +1,5 @@
 import { query } from '../db/client';
-import { generateTrendImage } from '../services/imageGeneration';
+import { generateTrendImage, generateBannerImage } from '../services/imageGeneration';
 import { generateTrendContent, inferCategorySlug } from '../services/trendContent';
 import { classifyStatus } from '../services/scoring';
 
@@ -222,7 +222,16 @@ export async function refreshAutoTrends(
       // 이미지 생성은 호출당 과금이라 실패해도 카드 생성을 막지 않는다
       if (withImage) {
         try {
-          const url = await generateTrendImage(String(trend.id), c.keyword, categorySlug, content.summary);
+          // gatherEvidence()로 이미 확보해둔 실제 뉴스/블로그 발췌를 그대로
+          // 재사용한다 — "돼지게티" 같은 신조어도 원문에서 실제 생김새 힌트를
+          // 얻어 이미지를 더 정확하게 그릴 수 있다 (추가 API 호출 없음).
+          const url = await generateTrendImage(
+            String(trend.id),
+            c.keyword,
+            categorySlug,
+            content.summary,
+            content.evidence,
+          );
           await query(`UPDATE trends SET image_url = $1 WHERE id = $2`, [url, trend.id]);
         } catch (err) {
           console.warn(`[autoTrends] "${c.keyword}" 이미지 생성 실패:`, err);
@@ -261,6 +270,16 @@ export async function refreshAutoTrends(
     summary.retiredManual = retiredManual.length;
   }
 
+  // 1위 트렌드가 바뀌었으면 홈 히어로 배너 전용 이미지를 새로 만든다.
+  // 순위가 그대로면 배너도 그대로 둔다 — 매 배치마다 과금하지 않기 위함이다.
+  if (withImage) {
+    try {
+      await refreshTopBanner();
+    } catch (err) {
+      console.warn('[autoTrends] 배너 이미지 갱신 실패:', err);
+    }
+  }
+
   const finishedAt = new Date();
   summary.finishedAt = finishedAt.toISOString();
 
@@ -269,4 +288,41 @@ export async function refreshAutoTrends(
       `내림 ${summary.retired} / 수동카드 내림 ${summary.retiredManual}`
   );
   return summary;
+}
+
+interface TopTrendRow {
+  id: number;
+  title: string;
+  summary: string | null;
+  category_slug: string;
+  evidence: { title: string; excerpt: string }[] | null;
+  banner_image_url: string | null;
+}
+
+/**
+ * 발행 중인 트렌드 중 최고 점수(1위)를 찾아, 이전 1위와 다르면 배너 이미지를 새로 만든다.
+ * 같은 트렌드가 계속 1위면 이미 banner_image_url이 있으니 다시 만들지 않는다.
+ */
+async function refreshTopBanner(): Promise<void> {
+  const [top] = await query<TopTrendRow>(
+    `SELECT t.id, t.title, t.summary, c.slug AS category_slug, t.evidence, t.banner_image_url
+       FROM trends t
+       JOIN categories c ON c.id = t.category_id
+      WHERE t.is_published = true
+      ORDER BY t.score DESC
+      LIMIT 1`
+  );
+
+  if (!top || top.banner_image_url) return;
+
+  const evidence = Array.isArray(top.evidence) ? top.evidence : [];
+  const url = await generateBannerImage(
+    top.id,
+    top.title,
+    top.category_slug,
+    top.summary,
+    evidence,
+  );
+  await query(`UPDATE trends SET banner_image_url = $1 WHERE id = $2`, [url, top.id]);
+  console.log(`[autoTrends] 1위 "${top.title}" 배너 이미지 생성 완료`);
 }

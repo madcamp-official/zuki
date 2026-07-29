@@ -54,10 +54,43 @@ const MENU_PROMPT: Record<string, string> = {
     'Strawberry ribbon cake with soft whipped cream frosting, elegant ribbon decoration, pastel pink cream',
 };
 
+/** 이미지 프롬프트에 참고 자료로 넣을 실제 게시물 근거 (뉴스/블로그 제목+발췌) */
+export interface ImageEvidenceItem {
+  title: string;
+  excerpt: string;
+}
+
+/**
+ * 자동 발굴된 키워드("돼지게티", "씬쿠키" 같은 신조어)는 MENU_PROMPT에 없어서
+ * summary 한 줄만으로 GPT가 생김새를 상상해서 그리다 보니 엉뚱한 결과가 나온다.
+ *
+ * trendContent.ts가 이미 검색해둔 실제 뉴스/블로그 본문 발췌(evidence)를 함께
+ * 넘기면, "이 키워드가 실제로 어떤 음식인지" 원문에서 힌트를 얻어 더 정확하게
+ * 그릴 수 있다. 추가 검색 API 호출 없이 이미 가진 데이터를 재사용한다.
+ */
+function describeFromEvidence(
+  title: string,
+  evidence: ImageEvidenceItem[],
+): string | null {
+  if (evidence.length === 0) return null;
+
+  const excerpts = evidence
+    .slice(0, 3)
+    .map((e) => `- ${e.title}: ${e.excerpt}`)
+    .join('\n');
+
+  return (
+    `Reference material about "${title}" from real news/blog posts ` +
+    `(use this to understand what this actually looks like, ` +
+    `do not include any of this text in the image itself):\n${excerpts}`
+  );
+}
+
 export function buildTrendImagePrompt(
   title: string,
   categorySlug: string,
   summary: string | null,
+  evidence: ImageEvidenceItem[] = [],
 ): string {
   if (categorySlug === 'marketing') {
     const subject = MARKETING_SUBJECT[title] ?? `A cafe marketing prop related to "${title}"`;
@@ -71,7 +104,39 @@ export function buildTrendImagePrompt(
 
   const detail = summary && summary !== title ? summary : title;
   const kind = categorySlug === 'beverage' ? 'cafe beverage' : 'cafe dessert';
-  return `A ${kind} called "${title}" (${detail}), photographed as the main subject. ${COMMON_STYLE}`;
+  const reference = describeFromEvidence(title, evidence);
+
+  return [
+    `A ${kind} called "${title}" (${detail}), photographed as the main subject.`,
+    reference,
+    COMMON_STYLE,
+  ]
+    .filter(Boolean)
+    .join(' ');
+}
+
+// 홈 히어로 배너 전용 스타일. 카드 이미지(COMMON_STYLE)는 정사각형 상품컷이라
+// 배너에 그대로 쓰면 밋밋하다 — 가로 구도에 장식 요소를 더해 "1위" 느낌을 낸다.
+const BANNER_STYLE =
+  'Ultra realistic commercial food photography for a wide hero banner, ' +
+  'dynamic diagonal composition with the food slightly off-center, ' +
+  'dramatic soft studio lighting, shallow depth of field, ' +
+  'floating decorative elements around the food matching its main ingredient ' +
+  '(e.g. fruit pieces, powder, steam, or drizzle), subtle sparkle accents, ' +
+  'warm vibrant colors, glossy appetizing texture, high-end dessert magazine cover quality, ' +
+  '8k, no text, no watermark, no logo, no people, wide 16:9 crop, ' +
+  'premium and celebratory mood fit for a "#1 trending" banner.';
+
+/** 카드용 프롬프트를 재사용하되 배너 전용 스타일/비율로 다시 감싼다 */
+export function buildBannerImagePrompt(
+  title: string,
+  categorySlug: string,
+  summary: string | null,
+  evidence: ImageEvidenceItem[] = [],
+): string {
+  const cardPrompt = buildTrendImagePrompt(title, categorySlug, summary, evidence);
+  const subject = cardPrompt.slice(0, cardPrompt.indexOf(COMMON_STYLE)).trim();
+  return `${subject} ${BANNER_STYLE}`;
 }
 
 let client: OpenAI | null = null;
@@ -118,24 +183,16 @@ async function uploadToStorage(fileName: string, buffer: Buffer): Promise<string
   return `${supabaseUrl}/storage/v1/object/public/${objectPath}`;
 }
 
-/**
- * 트렌드 하나에 대해 OpenAI로 이미지를 생성하고 접근 가능한 URL을 반환한다.
- *
- * 기본은 Supabase Storage 업로드(공개 URL). service_role 키가 없으면
- * 로컬 파일로 저장하고 상대 경로를 돌려준다 — 로컬 개발 편의를 위한 폴백이다.
- */
-export async function generateTrendImage(
-  trendId: string | number,
-  title: string,
-  categorySlug: string,
-  summary: string | null,
+/** OpenAI로 이미지를 생성해 버퍼로 받고, Storage(또는 로컬 폴백)에 올려 URL을 돌려준다 */
+async function generateAndStore(
+  prompt: string,
+  fileName: string,
+  size: '1024x1024' | '1536x1024',
 ): Promise<string> {
-  const prompt = buildTrendImagePrompt(title, categorySlug, summary);
-
   const result = await getClient().images.generate({
     model: 'gpt-image-1',
     prompt,
-    size: '1024x1024',
+    size,
     quality: 'medium',
     n: 1,
   });
@@ -146,7 +203,6 @@ export async function generateTrendImage(
   }
 
   const buffer = Buffer.from(b64, 'base64');
-  const fileName = `trend-${trendId}.png`;
 
   if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
     return uploadToStorage(fileName, buffer);
@@ -160,4 +216,36 @@ export async function generateTrendImage(
   fs.mkdirSync(OUTPUT_DIR, { recursive: true });
   fs.writeFileSync(path.join(OUTPUT_DIR, fileName), buffer);
   return `/generated/trends/${fileName}`;
+}
+
+/**
+ * 트렌드 하나에 대해 OpenAI로 이미지를 생성하고 접근 가능한 URL을 반환한다.
+ *
+ * 기본은 Supabase Storage 업로드(공개 URL). service_role 키가 없으면
+ * 로컬 파일로 저장하고 상대 경로를 돌려준다 — 로컬 개발 편의를 위한 폴백이다.
+ */
+export async function generateTrendImage(
+  trendId: string | number,
+  title: string,
+  categorySlug: string,
+  summary: string | null,
+  evidence: ImageEvidenceItem[] = [],
+): Promise<string> {
+  const prompt = buildTrendImagePrompt(title, categorySlug, summary, evidence);
+  return generateAndStore(prompt, `trend-${trendId}.png`, '1024x1024');
+}
+
+/**
+ * 홈 히어로 배너 전용 이미지를 생성한다. 1위 트렌드가 바뀔 때만 호출되므로
+ * (autoTrends.ts 참고) 매 요청마다 과금되지 않는다.
+ */
+export async function generateBannerImage(
+  trendId: string | number,
+  title: string,
+  categorySlug: string,
+  summary: string | null,
+  evidence: ImageEvidenceItem[] = [],
+): Promise<string> {
+  const prompt = buildBannerImagePrompt(title, categorySlug, summary, evidence);
+  return generateAndStore(prompt, `banner-${trendId}.png`, '1536x1024');
 }

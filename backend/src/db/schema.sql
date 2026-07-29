@@ -70,6 +70,7 @@ CREATE TABLE trends (
     score               NUMERIC(6,2) NOT NULL DEFAULT 0,  -- 11-5 스코어링 공식 결과
     reason              TEXT,                   -- "왜 뜨는지" 배경 설명 (기획서 4-2)
     image_url           TEXT,
+    banner_image_url    TEXT,                   -- 홈 히어로 배너 전용 이미지 (1위일 때만 생성, 카드 image_url과 별도)
     region_scope        VARCHAR(30) NOT NULL DEFAULT 'nationwide',  -- 이 트렌드가 주로 확산 중인 지역 (지역별 유행 속도 차이 반영, 기획서 9/16)
     primary_source      data_source NOT NULL DEFAULT 'editor',
     is_published        BOOLEAN NOT NULL DEFAULT false,
