@@ -62,13 +62,6 @@ export default async function TrendDetailPage({
                 {trend.searchGrowth}%
               </b>
             </span>
-            <span>
-              언급량{" "}
-              <b className="font-number text-strawberry">
-                {trend.mentionGrowth >= 0 ? "+" : ""}
-                {trend.mentionGrowth}%
-              </b>
-            </span>
           </div>
           <p className="text-sm text-gray-500">
             <span className="font-semibold text-dark">확산 지역</span>{" "}

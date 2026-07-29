@@ -60,13 +60,6 @@ export default function HeroBanner({ trend }: { trend?: TrendItem }) {
                   {trend?.searchGrowth ?? 78}%
                 </b>
               </span>
-              <span>
-                언급량{" "}
-                <b className="font-number text-lg">
-                  {(trend?.mentionGrowth ?? 0) >= 0 ? "+" : ""}
-                  {trend?.mentionGrowth ?? 63}%
-                </b>
-              </span>
             </div>
             {trend ? (
               <Link

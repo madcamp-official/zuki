@@ -12,7 +12,7 @@
  */
 import 'dotenv/config';
 import { getPool, query } from '../src/db/client';
-import { generateTrendImage } from '../src/services/imageGeneration';
+import { generateTrendImage, ImageEvidenceItem } from '../src/services/imageGeneration';
 
 async function main() {
   if (!process.env.OPENAI_API_KEY) {
@@ -29,8 +29,9 @@ async function main() {
     title: string;
     summary: string | null;
     category_slug: string;
+    evidence: ImageEvidenceItem[] | null;
   }>(
-    `SELECT t.id, t.title, t.summary, c.slug AS category_slug
+    `SELECT t.id, t.title, t.summary, c.slug AS category_slug, t.evidence
        FROM trends t
        JOIN categories c ON c.id = t.category_id
       ORDER BY t.id ASC`,
@@ -50,6 +51,7 @@ async function main() {
         trend.title,
         trend.category_slug,
         trend.summary,
+        Array.isArray(trend.evidence) ? trend.evidence : [],
       );
       await query('UPDATE trends SET image_url = $1 WHERE id = $2', [
         publicUrl,

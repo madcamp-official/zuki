@@ -13,7 +13,7 @@ export default async function RankingPage() {
           트렌드 랭킹 TOP 10 <span aria-hidden>📌</span>
         </h1>
         <p className="mt-2 text-sm text-gray-500">
-          검색량·언급량 증감을 기준으로 매긴 이번 주 트렌드 순위예요
+          검색량 증감을 기준으로 매긴 이번 주 트렌드 순위예요
         </p>
       </div>
 
@@ -54,13 +54,6 @@ export default async function RankingPage() {
                       <b className="font-number text-strawberry">
                         {trend.searchGrowth >= 0 ? "+" : ""}
                         {trend.searchGrowth}%
-                      </b>
-                    </span>
-                    <span>
-                      언급량{" "}
-                      <b className="font-number text-strawberry">
-                        {trend.mentionGrowth >= 0 ? "+" : ""}
-                        {trend.mentionGrowth}%
                       </b>
                     </span>
                   </div>
