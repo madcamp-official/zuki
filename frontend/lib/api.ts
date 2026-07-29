@@ -277,23 +277,27 @@ export async function fetchMyBookmarks(): Promise<TrendItem[]> {
       title: string;
       summary: string | null;
       status: string;
+      score: string | number;
       image_url: string | null;
     }[];
   }>("/api/users/me/bookmarks");
 
-  return bookmarks.map((b, index) => ({
-    id: String(b.id),
-    rank: index + 1,
-    title: b.title,
-    category: "dessert",
-    status: STATUS_MAP[b.status] ?? "태동기",
-    image: b.image_url || PLACEHOLDER_IMAGE,
-    searchGrowth: 0,
-    mentionGrowth: 0,
-    regionScope: "",
-    why: b.summary ? [b.summary] : [],
-    searchTrend: [],
-  }));
+  return bookmarks.map((b, index) => {
+    const score = Math.round(Number(b.score));
+    return {
+      id: String(b.id),
+      rank: index + 1,
+      title: b.title,
+      category: "dessert",
+      status: STATUS_MAP[b.status] ?? "태동기",
+      image: b.image_url || PLACEHOLDER_IMAGE,
+      searchGrowth: score,
+      mentionGrowth: score,
+      regionScope: "",
+      why: b.summary ? [b.summary] : [],
+      searchTrend: [],
+    };
+  });
 }
 
 /** POST /api/users/me/bookmarks/:trendId : 즐겨찾기 추가 */
