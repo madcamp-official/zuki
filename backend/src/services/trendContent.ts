@@ -132,7 +132,7 @@ function describeSignals(s: TrendSignalInput): string[] {
   }
   if (s.searchGrowthRate !== null) {
     const dir = s.searchGrowthRate >= 0 ? '증가' : '감소';
-    facts.push(`네이버 검색량이 ${Math.abs(s.searchGrowthRate)}% ${dir}`);
+    facts.push(`네이버 검색량이 최근 한 달 기준 ${Math.abs(s.searchGrowthRate)}% ${dir}`);
   }
   if (s.yoyGrowthRate !== null) {
     facts.push(`작년 같은 달 대비 ${s.yoyGrowthRate}%`);

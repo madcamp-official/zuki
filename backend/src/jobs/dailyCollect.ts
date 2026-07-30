@@ -48,32 +48,39 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
  * 네이버 검색지수 시계열에서 수준(level)과 증감률(momentum)을 뽑는다.
- *
- * 단순히 "오늘 vs 7일 전" 두 시점을 비교하지 않고,
- * **최근 7일 평균 vs 그 이전 7일 평균**을 비교한다. 이유:
- *
- *  1) 요일 효과 — 카페 디저트 검색은 주말에 몰린다. 하루 단위 비교는
- *     월요일과 일요일을 견주게 되어 항상 급락처럼 보인다.
- *  2) 이상치 내성 — 특정 하루가 이벤트로 튀어도 평균이 흡수한다.
- *
- * 14일치가 필요하지만 네이버가 3개월 시계열을 통째로 주므로,
- * 우리 수집 이력과 무관하게 첫 실행부터 계산 가능하다.
- *
- * level은 "현재 수준"이므로 최근 7일 평균을 쓴다(마지막 하루보다 안정적).
+ * 하루 단위가 아니라 구간 평균끼리 비교한다 — 요일 효과(주말 검색 급증)와
+ * 하루짜리 이상치를 평균이 흡수하기 때문이다.
  */
 export function calcNaverSignals(points: NaverTrendPoint[]): {
   level: number | null;
+  /**
+   * 증감률: 최근 28일 평균 vs 그 이전 28일 평균.
+   *
+   * 처음엔 7일 vs 직전 7일을 썼는데, 두 가지 문제가 있었다:
+   *   - 방송 한 번에 튄 반짝 스파이크가 +167% 같은 값으로 최상위를 차지한다.
+   *     우리가 찾는 건 반짝이 아니라 자리 잡아가는 유행이다.
+   *   - 3주 전부터 꾸준히 오르는 키워드는 최근 7일과 직전 7일이 둘 다 높아서
+   *     증감률이 밋밋하게 나온다. 진짜 확산일수록 오히려 낮게 찍혔다.
+   *
+   * 28일 비교는 반짝을 눌러주고 지속 상승을 크게 평가한다
+   * (실측: 90일 꾸준한 상승 = 7일 +7% vs 28일 +41%,
+   *        5일짜리 스파이크    = 7일 +286% vs 28일 +71%).
+   * 요일 효과도 4바퀴 돌아 안정적이고, 데이터랩이 90일 시계열을 통째로
+   * 주므로 추가 호출 없이 첫 수집부터 계산된다.
+   */
   changeRate: number | null;
 } {
   if (points.length === 0) return { level: null, changeRate: null };
 
-  const recent = points.slice(-7);
-  const previous = points.slice(-14, -7);
-  const avg = (arr: NaverTrendPoint[]) => arr.reduce((s, p) => s + p.ratio, 0) / arr.length;
+  const avg = (arr: NaverTrendPoint[]) =>
+    arr.reduce((s, p) => s + p.ratio, 0) / arr.length;
 
-  const level = round2(avg(recent));
+  const recent = points.slice(-28);
+  const previous = points.slice(-56, -28);
 
-  // 이전 7일이 없거나(데이터 부족) 기준값이 0이면 증감률 판단 불가
+  // level은 "현재 수준"이므로 최근 7일 평균을 유지한다 (28일이면 너무 과거까지 섞인다)
+  const level = round2(avg(points.slice(-7)));
+
   if (previous.length === 0) return { level, changeRate: null };
   const base = avg(previous);
   if (base === 0) return { level, changeRate: null };

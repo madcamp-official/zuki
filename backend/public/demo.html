@@ -562,6 +562,7 @@ async function loadTrends() {
         loadDetail();
       };
       const growth = [];
+      // 검색 증감률은 28일 평균 vs 이전 28일 평균 — 반짝이 아니라 자리 잡는 유행 기준
       if (t.search_growth_rate != null) growth.push(`검색 ${fmtPct(t.search_growth_rate)}`);
       if (t.mention_growth_rate != null) growth.push(`언급 ${fmtPct(t.mention_growth_rate)}`);
       const points = (t.score_history || []).length;
@@ -576,7 +577,7 @@ async function loadTrends() {
         </div>
         <div class="trend-meta" style="font-size:12px;color:var(--muted)">
           ${growth.length ? growth.join(' · ') : '증감률 데이터 없음'}
-          <span style="margin-left:auto">추이 ${points}일</span>
+          <span style="margin-left:auto" title="카드 생성 후 일일 수집을 거친 횟수. 매일 새벽 수집마다 1씩 늘어납니다">점수 이력 ${points}일</span>
         </div>`;
       list.appendChild(div);
     });

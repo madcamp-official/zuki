@@ -12,7 +12,8 @@ import { ApiError } from '../middlewares/errorHandler';
  *
  * metric_type 별 의미:
  *   naver/search_index         최근 7일 평균 검색지수 (0~100)
- *   naver/search_growth_rate   최근 7일 평균 대 이전 7일 평균 증감률 (%)
+ *   naver/search_growth_rate   최근 28일 평균 대 이전 28일 평균 증감률 (%)
+ *                              — 반짝 스파이크가 아니라 자리 잡는 유행을 재기 위해 28일
  *   youtube/video_count        키워드 검색 결과 영상 수
  *   youtube/view_count         조회수 상위 영상 10개의 조회수 합
  *   youtube/mention_growth_rate 영상 수 증감률 (%)
