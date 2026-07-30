@@ -50,11 +50,15 @@ const FORMS = [
 const SHORT_FORMS = new Set(['빵', '파이', '무스']);
 const MIN_PREFIX_FOR_SHORT_FORM = 2;
 
-/** 앞말 없이 단독으로도 완결된 메뉴 이름인 형태 단어 */
-const STANDALONE_FORMS = new Set([
-  '밀크티', '버블티', '아이스티', '애프터눈티', '홍차', '녹차', '말차', '보리차',
-  '아메리카노', '젤라또', '빙수',
-]);
+/*
+ * 한때 '밀크티', '빙수', '아메리카노' 같은 단독 형태 단어를 허용했지만 되돌렸다.
+ *
+ * "빙수가 뜬다"는 사장님이 쓸 수 있는 정보가 아니다. 여름이면 당연히 뜨고,
+ * 알아도 뭘 만들지 알 수 없다. "망고빙수가 뜬다"여야 행동으로 이어진다.
+ * 형태 단어 단독은 카테고리 이름이지 메뉴 이름이 아니다.
+ *
+ * 그래서 모든 형태 단어는 앞말이 붙어야만 인정한다 (아래 token.length > form.length).
+ */
 
 /**
  * 형태 단어로 끝나 보이지만 카페 메뉴가 아닌 것들.
@@ -93,6 +97,13 @@ const MARKETING_TERMS = [
   '리유저블컵', '텀블러', '키링', '스티커', '포토존', '럭키박스', '선물세트',
 ];
 
+/**
+ * MARKETING_TERMS의 접미사 매칭에 걸리지만 별도 카드로 둘 이유가 없는 것들.
+ * '설선물세트'는 '선물세트'와 사실상 같은 이야기라 카드가 둘로 쪼개진다.
+ * 게다가 명절 한정이라 7월에는 의미가 없다.
+ */
+const REDUNDANT_MARKETING = ['설선물세트', '추석선물세트', '명절선물세트'];
+
 /** 접미사형은 앞말이 있어야 인정한다 ('이벤트' 단독은 너무 일반적이라 제외) */
 const MIN_PREFIX_FOR_MARKETING = 2;
 
@@ -110,6 +121,21 @@ const GENERIC_MARKETING = [
   '무료체험', '체험단', '경품이벤트', '톡톡이벤트', '업체전용이벤트', '전용이벤트',
   '오픈이벤트', '가입이벤트', '출석이벤트', '댓글이벤트', '공유이벤트', '홍보이벤트',
   '할인이벤트', '특가이벤트', '브이이벤트',
+  // 카페 마케팅이 아니라 개인 재테크 유행. 블로그에 대량으로 올라온다
+  '현금챌린지', '무지출챌린지', '절약챌린지', '가계부챌린지',
+];
+
+/**
+ * 형태 단어 앞에 붙어도 메뉴 이름이 되지 못하는 수식어.
+ *
+ * '신상아이스크림', '신상빵', '건강빵', '일반빵'처럼 **수식어 + 형태** 조합은
+ * 특정 메뉴를 가리키지 않는다. 사장님이 "신상아이스크림이 뜬다"는 말을 듣고
+ * 할 수 있는 게 없다 — 어떤 아이스크림인지 모르니까.
+ * 앞말 길이 제한으로는 못 막는다(전부 2자 이상이라 통과한다).
+ */
+const GENERIC_PREFIXES = [
+  '신상', '신메뉴', '인기', '추천', '유명', '일반', '건강', '기본',
+  '맛있는', '존맛', '대박', '최고', '요즘', '오늘', '수제', '특별',
 ];
 
 /** 제목에서 뽑히면 안 되는 흔한 단어들 */
@@ -350,6 +376,7 @@ export function normalizeKeyword(rawToken: string): string | null {
   if (STOPWORDS.has(token) || BRAND_NAMES.has(token)) return null;
 
   // 마케팅 소재는 그 자체로 유효하다 ('리유저블컵', '포토존')
+  if (REDUNDANT_MARKETING.includes(token)) return null;
   if (MARKETING_TERMS.some((t) => token.endsWith(t))) return token;
 
   // 광고 글의 상투어는 앞말이 붙어 있어도 트렌드가 아니다
@@ -361,10 +388,7 @@ export function normalizeKeyword(rawToken: string): string | null {
   );
   if (marketingSuffix) return token;
 
-  // 형태 단어는 원칙적으로 앞말이 있어야 한다 ('빵' X, '소금빵' O).
-  // 다만 차 종류는 그 자체가 완결된 메뉴 이름이라 단독으로도 인정한다.
-  if (STANDALONE_FORMS.has(token)) return token;
-
+  // 형태 단어는 반드시 앞말이 있어야 한다 ('빙수' X, '망고빙수' O)
   const form = FORMS.find((f) => token.endsWith(f) && token.length > f.length);
   if (!form) return null;
 
@@ -373,6 +397,12 @@ export function normalizeKeyword(rawToken: string): string | null {
   // 형태 단어 앞이 지역명 그 자체면 메뉴가 아니라 지역 특산/가게를 가리킨다
   // ('서울빵', '대전빵' X). 위에서 벗기지 못한 짧은 조합이 여기서 걸린다.
   if (REGION_PREFIXES.includes(prefix)) return null;
+
+  // 수식어 + 형태는 특정 메뉴를 가리키지 않는다 ('신상아이스크림', '건강빵')
+  if (GENERIC_PREFIXES.includes(prefix)) return null;
+
+  // 숫자로 시작하면 제품 스펙 표기지 메뉴 이름이 아니다 ('120겹파이', '1000원빵')
+  if (/^[0-9]/.test(token)) return null;
 
   // '빵', '티' 같은 짧은 형태는 가게 이름에도 흔하다.
   // 앞에 붙는 말이 2자 이상일 때만 메뉴로 인정한다 ('탄티' X, '밀크티' O)

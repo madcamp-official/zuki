@@ -1,6 +1,7 @@
 import { query } from '../db/client';
 import { generateTrendImage, generateBannerImage } from '../services/imageGeneration';
 import { generateTrendContent, buildBasicContent, inferCategorySlug } from '../services/trendContent';
+import { normalizeKeyword } from '../services/keywordDiscovery';
 import { classifyStatus } from '../services/scoring';
 
 /**
@@ -192,7 +193,44 @@ async function revalidateAutoTrends(minSources: number) {
     [minSources]
   );
 
-  return { retired: retired.length, restored: restored.length };
+  // 키워드 품질 규칙(normalizeKeyword)도 다시 적용한다.
+  //
+  // 그 규칙은 원래 **발굴 시점**에만 걸린다. 그래서 필터를 강화해도 이미
+  // DB에 들어와 있던 키워드는 그대로 카드가 된다. 실제로 '아임도넛',
+  // '준초콜릿'을 BRAND_NAMES/STOPWORDS에 넣고 DB에서 지웠는데, 배포 전
+  // 발굴이 한 번 더 돌면서 다시 들어와 카드까지 만들어졌다.
+  // 규칙을 고칠 때마다 사람이 DELETE를 치는 건 유지될 수 없다.
+  const purged = await purgeInvalidKeywords();
+
+  return { retired: retired.length + purged, restored: restored.length };
+}
+
+/**
+ * 현재 필터 규칙을 통과하지 못하는 자동 키워드의 카드를 내린다.
+ *
+ * 카드만 내리고 키워드는 남긴다 — 다음 발굴에서 어차피 다시 걸러지고,
+ * 지우면 방금 쌓은 지표(검색지수 시계열)까지 날아가기 때문이다.
+ * 사람이 직접 넣은 키워드(editor)는 규칙과 무관하게 존중한다.
+ */
+async function purgeInvalidKeywords(): Promise<number> {
+  const rows = await query<{ id: number; keyword: string }>(
+    `SELECT t.id, k.keyword
+       FROM trends t JOIN keywords k ON k.trend_id = t.id
+      WHERE t.is_auto = true AND t.is_published = true AND k.source <> 'editor'`
+  );
+
+  const invalid = rows.filter((r) => normalizeKeyword(r.keyword) === null);
+  if (invalid.length === 0) return 0;
+
+  await query(
+    `UPDATE trends SET is_published = false, updated_at = now() WHERE id = ANY($1::bigint[])`,
+    [invalid.map((r) => r.id)]
+  );
+  console.log(
+    `[autoTrends] 필터 규칙 재적용으로 ${invalid.length}개 내림: ` +
+      invalid.slice(0, 10).map((r) => r.keyword).join(', ')
+  );
+  return invalid.length;
 }
 
 export interface AutoTrendOptions {
