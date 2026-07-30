@@ -3,7 +3,6 @@ import {
   NAVER_MAX_KEYWORDS_PER_CALL,
   NaverTrendPoint,
   fetchNaverTrends,
-  fetchSeasonalCheck,
 } from '../services/naverDataLab';
 import { measureMentionTrend } from '../services/naverSearch';
 import { fetchYoutubeStats } from '../services/youtubeApi';
@@ -172,7 +171,7 @@ export interface DailyCollectSummary {
   naverProcessed: number;
   /** 블로그 언급 추이를 측정한 키워드 수 */
   mentionMeasured: number;
-  /** 계절성 판별(작년 같은 달 비교)을 완료한 키워드 수 */
+  /** @deprecated 계절성 판별은 제거됐다. 응답 형태 호환을 위해 항상 0 */
   seasonalChecked: number;
   /** 유튜브까지 수집한 키워드 수 (트렌드 카드에 연결된 것만) */
   youtubeProcessed: number;
@@ -336,40 +335,20 @@ export async function runDailyCollect(): Promise<DailyCollectSummary> {
 
   console.log(`[dailyCollect] 언급 추이 완료: ${summary.mentionMeasured}/${mentionTargets.length}`);
 
-  // ---------------------------------------------------------------
-  // 1.7단계: 계절성 판별 (작년 같은 달과 비교)
-  //
-  // 7월에 팥빙수 검색이 오르는 건 트렌드가 아니라 여름이라서다.
-  // 최근 7일 대 이전 7일만 보면 계절 메뉴가 전부 "상승 중"으로 잡히므로,
-  // 월간 24개월치를 받아 작년 같은 달과 비교해 걸러낸다.
-  // ---------------------------------------------------------------
-  for (let i = 0; i < allKeywords.length; i += NAVER_MAX_KEYWORDS_PER_CALL) {
-    const chunk = allKeywords.slice(i, i + NAVER_MAX_KEYWORDS_PER_CALL);
-    try {
-      const checks = await fetchSeasonalCheck(chunk.map((k) => k.keyword));
-      apiCallsUsed += 1;
-
-      for (const c of checks) {
-        const kw = byKeyword.get(c.keyword);
-        if (!kw) continue;
-        await query(
-          `UPDATE keywords SET is_seasonal = $1, yoy_growth_rate = $2 WHERE id = $3`,
-          [c.isSeasonal, c.yoyGrowthRate, kw.id]
-        );
-        summary.seasonalChecked += 1;
-      }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      console.error(`[dailyCollect] 계절성 판별 실패:`, message);
-      summary.errors.push({ keyword: chunk.map((k) => k.keyword).join(', '), message });
-    }
-
-    if (i + NAVER_MAX_KEYWORDS_PER_CALL < allKeywords.length) {
-      await sleep(NAVER_CALL_DELAY_MS);
-    }
-  }
-
-  console.log(`[dailyCollect] 계절성 판별 완료: ${summary.seasonalChecked}/${allKeywords.length}`);
+  /*
+   * 계절성 판별(fetchSeasonalCheck)은 수집에서 제거했다.
+   *
+   * 원래 "작년 같은 달과 비교"로 계절 메뉴를 카드 후보에서 걸렀는데,
+   * 그 필터 자체를 없앴다(autoTrends.ts 참고 — 계절 유행도 카탈로그에
+   * 보여줄 가치가 있다). 그런데 검사는 계속 돌면서 키워드마다 데이터랩
+   * 호출을 소모하고 있었다. 전체 키워드 기준 실행당 130회+, 하루 두 번
+   * 돌면 검색지수 수집과 합쳐 일일 한도(1,000회)를 넘겨 **수집 전체가
+   * 실패**했다 (실측: 네이버 0 / 실패 560). 쓰지 않는 값에 본 기능을
+   * 죽일 이유가 없다.
+   *
+   * keywords.is_seasonal / yoy_growth_rate 컬럼과 기존 값은 남겨둔다 —
+   * 문구("작년 같은 달 대비")가 참조하고, 나중에 계절 뱃지에 쓸 수 있다.
+   */
 
   // ---------------------------------------------------------------
   // 2단계: 트렌드 카드에 연결된 키워드만 유튜브 수집 + 점수 갱신
