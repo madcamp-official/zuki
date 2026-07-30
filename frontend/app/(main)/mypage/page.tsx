@@ -12,6 +12,32 @@ import {
   type MyProfile,
 } from "@/lib/api";
 
+/** 즐겨찾기한 트렌드들의 검색량 증감을 한눈에 보여주는 요약 배지 */
+function BookmarkSummary({ trends }: { trends: TrendItem[] }) {
+  const rising = trends.filter((t) => t.searchGrowth > 0);
+  const declining = trends.filter((t) => t.searchGrowth < 0);
+  const topRising = rising.reduce<TrendItem | null>(
+    (best, t) => (!best || t.searchGrowth > best.searchGrowth ? t : best),
+    null,
+  );
+
+  return (
+    <div className="flex flex-wrap gap-3 rounded-2xl border border-[#f1dfd3] bg-white p-4 text-base">
+      <span className="rounded-full bg-orange-50 px-4 py-2 font-semibold text-strawberry">
+        📈 상승 중 {rising.length}개
+      </span>
+      <span className="rounded-full bg-gray-100 px-4 py-2 font-semibold text-gray-500">
+        📉 하락 중 {declining.length}개
+      </span>
+      {topRising && (
+        <span className="rounded-full bg-cream px-4 py-2 font-semibold text-dark">
+          🔥 {topRising.title} +{topRising.searchGrowth}%로 가장 급상승
+        </span>
+      )}
+    </div>
+  );
+}
+
 export default function MyPage() {
   const [profile, setProfile] = useState<MyProfile | null>(null);
   const [loadingProfile, setLoadingProfile] = useState(true);
@@ -122,11 +148,14 @@ export default function MyPage() {
             아직 즐겨찾기한 트렌드가 없어요
           </p>
         ) : (
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-            {bookmarked.map((trend) => (
-              <TrendCard key={trend.id} trend={trend} initialBookmarked />
-            ))}
-          </div>
+          <>
+            <BookmarkSummary trends={bookmarked} />
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+              {bookmarked.map((trend) => (
+                <TrendCard key={trend.id} trend={trend} initialBookmarked />
+              ))}
+            </div>
+          </>
         )}
       </section>
 
