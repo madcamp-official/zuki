@@ -72,6 +72,7 @@ export interface TrendSignals {
  *   낮음(~30)      태동기      태동기      태동기
  *
  * level을 모르면(수집 전) momentum만으로 임시 판정한다.
+ * momentum을 모르면(최근 등장) 전성기 후보에서 제외한다 — 아래 참고.
  */
 export function classifyStatus(signals: TrendSignals): TrendStatus {
   const { searchLevel, searchMomentum, youtubeMomentum } = signals;
@@ -106,9 +107,19 @@ export function classifyStatus(signals: TrendSignals): TrendStatus {
   // 검색량 자체가 미미하면 태동기
   if (searchLevel < lowLevel) return 'emerging';
 
+  /*
+   * 모멘텀이 없으면 전성기로 분류하지 않는다.
+   *
+   * momentum이 null인 건 "비교할 과거가 없다" = 최근에 처음 등장했다는 뜻이다
+   * (dailyCollect의 이전 28일 데이터 부족 가드). 그런데 아래 로직대로면
+   * level만 높아도 'peak'가 되는데, 전성기는 "이미 높은 수준에서 정체"라는
+   * 뜻이라 정반대다. 갓 등장해서 규모가 붙은 건 확산 중, 즉 상승기다.
+   */
+  if (momentum === null) return 'rising';
+
   // 규모가 커도 아직 급등 중이면 전성기가 아니라 상승기다.
   // 전성기는 "이미 높은 수준에서 정체"를 뜻한다.
-  if (momentum !== null && momentum >= surgingMomentum) return 'rising';
+  if (momentum >= surgingMomentum) return 'rising';
 
   // 큰 트렌드가 정체 중이면 전성기
   if (searchLevel >= highLevel) return 'peak';

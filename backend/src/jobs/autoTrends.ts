@@ -127,7 +127,14 @@ const CANDIDATE_SQL = `
     LEFT JOIN latest_mention_growth lmg ON lmg.keyword_id = k.id
     LEFT JOIN latest_velocity lv ON lv.keyword_id = k.id
    WHERE li.value >= $1
-     AND k.mention_count >= $2
+     -- 언급 횟수 하한도 에디터 키워드는 면제한다.
+     --
+     -- 이 조건은 자동 발굴의 일회성 노이즈를 거르려고 둔 것이다. 사람이
+     -- "이건 감시해라"라고 직접 넣은 키워드에까지 적용할 이유가 없다.
+     -- 실제로 '두바이쫀득쿠키'는 표기가 40갈래로 쪼개져(두쫀쿠키/두바이쫀뜩쿠키/
+     -- 군산두바이쫀득쿠키...) 각각 언급 1~2회라 전부 탈락했다. 합치면 큰 유행인데
+     -- 파편화 때문에 신호가 흩어진 경우라, 에디터가 대표 표기를 지정해주면 된다.
+     AND (k.source = 'editor' OR k.mention_count >= $2)
      -- is_seasonal은 여기서 거르지 않는다.
      --
      -- 원래는 "작년 같은 달에도 높았던 것"을 빼서 스테디셀러의 계절 반복을
