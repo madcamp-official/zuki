@@ -42,6 +42,12 @@ interface RawScoreHistoryPoint {
   recorded_date: string;
 }
 
+/** 네이버 데이터랩 일별 검색지수 (0~100). "검색량 추이" 그래프용 */
+interface RawSearchIndexPoint {
+  search_index: string | number;
+  recorded_date: string;
+}
+
 function toTrendItem(raw: RawTrend, index: number): TrendItem {
   const score = Math.round(Number(raw.score));
 
@@ -139,16 +145,30 @@ export async function fetchTrends(params?: {
 export async function fetchTrendById(id: string): Promise<{
   trend: TrendItem;
   scoreHistory: number[];
+  /** "검색량 추이" 그래프용 — 네이버 데이터랩 일별 검색지수(0~100)와 날짜 라벨 */
+  searchHistory: { values: number[]; labels: string[] };
 } | null> {
   try {
-    const { trend, scoreHistory } = await apiFetch<{
+    const { trend, scoreHistory, searchIndexHistory } = await apiFetch<{
       trend: RawTrend;
       scoreHistory: RawScoreHistoryPoint[];
+      searchIndexHistory: RawSearchIndexPoint[];
     }>(`/api/trends/${id}`);
+
+    // 60일치 일별 값. 라벨은 다 붙이면 겹치므로 5~6개만 균등하게 뽑는다
+    const points = (searchIndexHistory ?? []).map((p) => ({
+      value: Math.round(Number(p.search_index)),
+      date: String(p.recorded_date).slice(5, 10).replace("-", "/"), // 'MM/DD'
+    }));
+    const labelStep = Math.max(1, Math.ceil(points.length / 6));
+    const labels = points
+      .filter((_, i) => i % labelStep === 0)
+      .map((p) => p.date);
 
     return {
       trend: toTrendItem(trend, 0),
       scoreHistory: scoreHistory.map((point) => Math.round(Number(point.score))),
+      searchHistory: { values: points.map((p) => p.value), labels },
     };
   } catch {
     return null;

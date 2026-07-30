@@ -20,7 +20,7 @@ export default async function TrendDetailPage({
     notFound();
   }
 
-  const { trend, scoreHistory } = result;
+  const { trend, searchHistory } = result;
 
   const related = (await fetchTrends({ category: trend.category, limit: 5 })).filter(
     (item) => item.id !== trend.id,
@@ -77,7 +77,9 @@ export default async function TrendDetailPage({
           네이버 데이터랩 기준 상대 검색지수 (0~100)
         </p>
         <div className="mt-4">
-          <TrendChart data={scoreHistory} />
+          {/* scoreHistory(점수 이력)가 아니라 일별 검색지수를 쓴다 —
+              화면 라벨이 "네이버 데이터랩 기준 상대 검색지수(0~100)"이므로 이 값이 맞다 */}
+          <TrendChart data={searchHistory.values} labels={searchHistory.labels} />
         </div>
       </section>
 
