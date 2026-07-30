@@ -48,6 +48,19 @@ interface RawSearchIndexPoint {
   recorded_date: string;
 }
 
+/**
+ * 백엔드 reason은 "문장1. 문장2. 문장3." 형태의 한 문단이라 그대로 두면
+ * 불릿 하나에 다 뭉쳐 보인다. 문장 단위로 나눠 각각 불릿으로 보여준다.
+ * "117.6%" 같은 소수점은 문장 끝이 아니므로 끊지 않도록 뒤에 공백+대문자/한글이
+ * 오는 마침표만 구분자로 삼는다.
+ */
+function splitReasonIntoSentences(reason: string): string[] {
+  return reason
+    .split(/\.\s+(?=[^\d])|\.\s*$/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
 function toTrendItem(raw: RawTrend, index: number): TrendItem {
   const score = Math.round(Number(raw.score));
 
@@ -63,7 +76,7 @@ function toTrendItem(raw: RawTrend, index: number): TrendItem {
     // 백엔드에 아직 언급량 지표가 없어 검색량 기반으로 임시 표시
     mentionGrowth: score,
     regionScope: raw.region_scope,
-    why: raw.reason ? raw.reason.split("\n").filter(Boolean) : [],
+    why: raw.reason ? splitReasonIntoSentences(raw.reason) : [],
     searchTrend: [],
   };
 }
