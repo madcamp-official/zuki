@@ -37,7 +37,7 @@ export default function TrendChart({
   const linePath = points.map((p, i) => `${i ? "L" : "M"} ${p.x} ${p.y}`).join(" ");
   const areaPath = `${linePath} L ${points.at(-1)!.x} ${PADDING.top + chartHeight} L ${points[0].x} ${PADDING.top + chartHeight} Z`;
   const recent = data.slice(-Math.min(7, data.length));
-  const delta = recent.at(-1)! - recent[0];
+  const delta = Math.round((recent.at(-1)! - recent[0]) * 100) / 100;
   const peakIndex = data.lastIndexOf(rawMax);
   const labelIndices = Array.from(new Set([0, Math.round((data.length - 1) / 4), Math.round((data.length - 1) / 2), Math.round((data.length - 1) * 0.75), data.length - 1]));
 

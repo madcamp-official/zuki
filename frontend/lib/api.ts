@@ -169,8 +169,10 @@ export async function fetchTrendById(id: string): Promise<{
     }>(`/api/trends/${id}`);
 
     // 차트 컴포넌트가 균등한 5개 지점을 골라 표시하므로 모든 날짜를 전달한다.
+    // 검색량이 극히 적은 롱테일 키워드는 지수가 0~1 사이에 몰려 있어 정수로
+    // 반올림하면 전부 0이 되어 그래프가 평평해 보인다. 소수점 둘째 자리까지 유지한다.
     const points = (searchIndexHistory ?? []).map((p) => ({
-      value: Math.round(Number(p.search_index)),
+      value: Math.round(Number(p.search_index) * 100) / 100,
       date: String(p.recorded_date).slice(5, 10).replace("-", "/"), // 'MM/DD'
     }));
     return {
