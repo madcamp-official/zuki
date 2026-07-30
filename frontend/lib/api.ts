@@ -173,18 +173,6 @@ export async function fetchTrendById(id: string): Promise<{
       value: Math.round(Number(p.search_index)),
       date: String(p.recorded_date).slice(5, 10).replace("-", "/"), // 'MM/DD'
     }));
-<<<<<<< HEAD
-    const labelStep = Math.max(1, Math.ceil(points.length / 6));
-    const labels = points
-      .filter((_, i) => i % labelStep === 0)
-      .map((p) => p.date);
-    // 마지막 날짜는 반드시 보여준다 — 샘플링이 끝점을 건너뛰면
-    // 데이터가 옛날에 끊긴 것처럼 보인다
-    const lastDate = points[points.length - 1]?.date;
-    if (lastDate && labels[labels.length - 1] !== lastDate) labels.push(lastDate);
-=======
->>>>>>> def8e124c43dc01fe1eb074a804854d37747ac02
-
     return {
       trend: toTrendItem(trend, 0),
       scoreHistory: scoreHistory.map((point) => Math.round(Number(point.score))),

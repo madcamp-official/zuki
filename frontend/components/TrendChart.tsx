@@ -19,27 +19,6 @@ export default function TrendChart({
     );
   }
 
-<<<<<<< HEAD
-  // Y축을 데이터에 맞춰 조정한다. 100으로 고정하면 검색지수가 낮은 키워드
-  // (예: 8 언저리)가 바닥에 깔린 직선처럼 보여서, "+11% 증가" 같은 통계와
-  // 그래프가 서로 안 맞는 것처럼 읽힌다. 실제 변동이 보이게 최대값의 1.3배를
-  // 천장으로 쓰되, 너무 좁아져 노이즈가 산맥처럼 보이지 않게 하한 10을 둔다.
-  const max = Math.max(10, Math.ceil(Math.max(...data) * 1.3));
-  const stepX = (WIDTH - PADDING * 2) / (data.length - 1);
-  const axisLabels = labels ?? MONTH_LABELS.slice(-data.length);
-
-  const points = data.map((value, i) => {
-    const x = PADDING + i * stepX;
-    const y = HEIGHT - PADDING - (value / max) * (HEIGHT - PADDING * 2);
-    return { x, y, value };
-  });
-
-  const linePath = points
-    .map((p, i) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`)
-    .join(" ");
-
-  const areaPath = `${linePath} L ${points[points.length - 1].x} ${HEIGHT - PADDING} L ${points[0].x} ${HEIGHT - PADDING} Z`;
-=======
   const rawMin = Math.min(...data);
   const rawMax = Math.max(...data);
   // 0~100 전체 축 대신 실제 변동 폭을 확대해 작은 상승도 한눈에 읽히게 한다.
@@ -61,7 +40,6 @@ export default function TrendChart({
   const delta = recent.at(-1)! - recent[0];
   const peakIndex = data.lastIndexOf(rawMax);
   const labelIndices = Array.from(new Set([0, Math.round((data.length - 1) / 4), Math.round((data.length - 1) / 2), Math.round((data.length - 1) * 0.75), data.length - 1]));
->>>>>>> def8e124c43dc01fe1eb074a804854d37747ac02
 
   return (
     <div>
