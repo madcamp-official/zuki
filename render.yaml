@@ -1,0 +1,46 @@
+# Render Blueprint — 백엔드 배포 설정
+# 대시보드에서 New > Blueprint 로 이 레포를 연결하면 아래 설정대로 서비스가 생성된다.
+# 문서: https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: trendpick-backend
+    runtime: node
+    plan: free
+    rootDir: backend
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    # /health는 DB 연결 없이도 200을 주도록 만들어둬서 헬스체크 경로로 적합
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: 22
+      # 아래 4개는 시크릿이라 값을 여기 적지 않는다.
+      # sync: false 로 두면 Render 대시보드에서 직접 입력하게 된다.
+      - key: DATABASE_URL
+        sync: false
+      - key: NAVER_CLIENT_ID
+        sync: false
+      - key: NAVER_CLIENT_SECRET
+        sync: false
+      - key: YOUTUBE_API_KEY
+        sync: false
+      # Supabase Auth — JWT 검증용 공개키(JWKS)를 SUPABASE_URL에서 가져온다
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      # AI 생성 이미지를 Supabase Storage에 업로드할 때 필요.
+      # RLS를 우회하는 최고 권한 키라 절대 브라우저에 노출하면 안 된다.
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      # 트렌드 카드 이미지·문구 자동 생성
+      - key: OPENAI_API_KEY
+        sync: false
+      # 프론트 배포 후 해당 도메인으로 좁힐 것 (쉼표로 여러 개 가능)
+      # 미설정 시 전체 허용
+      - key: CORS_ORIGIN
+        sync: false
+      # 수집 실행 API 보호용. Render가 임의 문자열을 생성해준다.
+      # 외부 스케줄러(cron-job.org)에 x-collect-secret 헤더로 같은 값을 넣어야 한다.
+      - key: COLLECT_SECRET
+        generateValue: true

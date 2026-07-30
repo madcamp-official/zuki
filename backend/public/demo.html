@@ -1,0 +1,838 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>TrendPick 백엔드 데모</title>
+<style>
+  :root {
+    --bg: #f7f7f5;
+    --card: #ffffff;
+    --border: #e3e3de;
+    --text: #1f1f1d;
+    --muted: #77776f;
+    --accent: #c96442;
+    --accent-soft: #f6ece8;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Malgun Gothic", sans-serif;
+    background: var(--bg); color: var(--text); line-height: 1.55;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 32px 20px 80px; }
+  header h1 { font-size: 24px; margin: 0 0 4px; }
+  header p { margin: 0; color: var(--muted); font-size: 14px; }
+  .status-line { margin-top: 10px; font-size: 13px; color: var(--muted); }
+  .status-line .dot { display:inline-block; width:8px; height:8px; border-radius:50%; background:#bbb; margin-right:6px; vertical-align:middle; }
+  .status-line .dot.ok { background:#3f9e5f; }
+  .status-line .dot.err { background:#c0392b; }
+
+  .tabs { display: flex; gap: 4px; margin: 24px 0 20px; border-bottom: 1px solid var(--border); }
+  .tabs button {
+    background: none; border: none; padding: 10px 16px; cursor: pointer;
+    font-size: 14px; color: var(--muted); border-bottom: 2px solid transparent;
+    font-family: inherit;
+  }
+  .tabs button.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+
+  .panel { display: none; }
+  .panel.active { display: block; }
+
+  .card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+    padding: 18px 20px; margin-bottom: 16px;
+  }
+  .card h2 { font-size: 15px; margin: 0 0 12px; }
+  .card h2 .method {
+    display:inline-block; font-size:11px; font-weight:700; padding:2px 7px; border-radius:4px;
+    background: var(--accent-soft); color: var(--accent); margin-right:8px; vertical-align:1px;
+  }
+
+  label { display:block; font-size: 12px; color: var(--muted); margin: 10px 0 4px; }
+  input, select, textarea {
+    width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px;
+    font-size: 14px; font-family: inherit; background: #fff; color: var(--text);
+  }
+  textarea { resize: vertical; min-height: 60px; }
+  .row { display: flex; gap: 12px; flex-wrap: wrap; }
+  .row > div { flex: 1; min-width: 160px; }
+
+  button.go {
+    margin-top: 14px; padding: 9px 18px; border-radius: 6px; border: none;
+    background: var(--accent); color: #fff; font-size: 14px; font-weight: 600;
+    cursor: pointer; font-family: inherit;
+  }
+  button.go:hover { opacity: .9; }
+  button.go:disabled { opacity: .5; cursor: default; }
+  button.ghost {
+    background: #fff; color: var(--text); border: 1px solid var(--border);
+  }
+
+  pre.out {
+    margin: 12px 0 0; padding: 12px; background: #1f1f1d; color: #e8e8e3;
+    border-radius: 6px; font-size: 12px; overflow-x: auto; max-height: 300px;
+    white-space: pre-wrap; word-break: break-all;
+  }
+  pre.out:empty { display: none; }
+
+  .trend-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; margin-top: 14px; }
+  .trend-card {
+    background: #fff; border: 1px solid var(--border); border-radius: 8px; padding: 14px;
+    cursor: pointer;
+  }
+  .trend-card:hover { border-color: var(--accent); }
+  .trend-card h3 { margin: 0 0 6px; font-size: 15px; }
+  .trend-card p { margin: 0; font-size: 13px; color: var(--muted); }
+  .trend-meta { margin-top: 10px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .badge { font-size: 11px; padding: 2px 8px; border-radius: 20px; background: var(--accent-soft); color: var(--accent); }
+  .badge.gray { background: #eee; color: var(--muted); }
+  .score { font-size: 12px; color: var(--muted); margin-left: auto; }
+
+  .hint { font-size: 12px; color: var(--muted); margin-top: 6px; }
+  .empty { color: var(--muted); font-size: 14px; padding: 24px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <h1>TrendPick 백엔드 데모</h1>
+    <p>프론트엔드 없이 백엔드 API를 직접 호출해 시연하는 페이지입니다.</p>
+    <div class="status-line"><span class="dot" id="healthDot"></span><span id="healthText">서버 확인 중…</span></div>
+  </header>
+
+  <div class="tabs">
+    <button class="active" data-tab="public">공개 API (사용자 화면)</button>
+    <button data-tab="admin">관리자 API (에디터)</button>
+  </div>
+
+  <!-- ========== 공개 API ========== -->
+  <div class="panel active" id="panel-public">
+
+    <div class="card">
+      <h2><span class="method">AUTH</span>Supabase 로그인 / 회원가입</h2>
+      <p class="hint">
+        Supabase Auth로 직접 로그인해 access token을 받습니다. 이 토큰이 아래 즐겨찾기·프로필 요청에
+        <code>Authorization: Bearer</code> 헤더로 자동 첨부됩니다. 프론트엔드도 같은 방식으로 붙이면 됩니다.
+      </p>
+      <div class="row">
+        <div><label>이메일</label><input id="authEmail" type="email" placeholder="test@example.com" /></div>
+        <div><label>비밀번호</label><input id="authPassword" type="password" placeholder="6자 이상" /></div>
+      </div>
+      <button class="go" onclick="doAuth('login')">로그인</button>
+      <button class="go ghost" onclick="doAuth('signup')">회원가입</button>
+      <button class="go ghost" onclick="doLogout()">로그아웃</button>
+      <div id="authStatus" class="status-line" style="margin-top:12px">
+        <span class="dot" id="authDot"></span><span id="authText">로그아웃 상태</span>
+      </div>
+      <pre class="out" id="authOut"></pre>
+    </div>
+
+    <div class="card">
+      <h2><span class="method">GET/PATCH</span>/api/users/me — 내 프로필</h2>
+      <div class="row">
+        <div><label>매장명</label><input id="pStoreName" /></div>
+        <div><label>시/도</label><input id="pRegionSi" placeholder="예: 대전광역시" /></div>
+        <div><label>시/군/구</label><input id="pRegionGu" placeholder="예: 유성구" /></div>
+      </div>
+      <button class="go" onclick="loadProfile()">조회</button>
+      <button class="go ghost" onclick="saveProfile()">저장</button>
+      <pre class="out" id="profileOut"></pre>
+    </div>
+
+    <div class="card">
+      <h2><span class="method">GET</span>/api/trends — 트렌드 피드</h2>
+      <div class="row">
+        <div>
+          <label>카테고리</label>
+          <select id="fCategory"><option value="">전체</option></select>
+        </div>
+        <div>
+          <label>확산 단계</label>
+          <select id="fStatus">
+            <option value="">전체</option>
+            <option value="emerging">태동기 (emerging)</option>
+            <option value="rising">상승기 (rising)</option>
+            <option value="peak">전성기 (peak)</option>
+            <option value="declining">하락기 (declining)</option>
+          </select>
+        </div>
+        <div>
+          <label>정렬</label>
+          <select id="fSort">
+            <option value="latest">최신순 (latest)</option>
+            <option value="score">점수순 (score)</option>
+          </select>
+        </div>
+        <div>
+          <label>개수 (limit)</label>
+          <input id="fLimit" type="number" value="20" min="1" max="100" />
+        </div>
+      </div>
+      <button class="go" onclick="loadTrends()">조회</button>
+      <div id="trendList" class="trend-grid"></div>
+      <div id="trendEmpty" class="empty" style="display:none">조회된 트렌드가 없습니다.</div>
+    </div>
+
+    <div class="card">
+      <h2><span class="method">GET</span>/api/trends/:id — 트렌드 상세 + 스코어 추이</h2>
+      <div class="row">
+        <div><label>트렌드 ID</label><input id="detailId" type="number" placeholder="위 카드를 클릭하면 자동 입력됩니다" /></div>
+      </div>
+      <button class="go" onclick="loadDetail()">상세 조회</button>
+      <pre class="out" id="detailOut"></pre>
+    </div>
+
+    <div class="card">
+      <h2><span class="method">GET/POST/DELETE</span>/api/users/me/bookmarks — 즐겨찾기</h2>
+      <p class="hint">로그인이 필요합니다. 위에서 로그인하면 토큰이 자동으로 붙습니다.</p>
+      <div class="row">
+        <div><label>트렌드 ID</label><input id="bmTrendId" type="number" /></div>
+      </div>
+      <button class="go" onclick="bookmark('POST')">추가</button>
+      <button class="go ghost" onclick="bookmark('DELETE')">해제</button>
+      <button class="go ghost" onclick="bookmark('GET')">목록 조회</button>
+      <pre class="out" id="bmOut"></pre>
+    </div>
+
+    <div class="card">
+      <h2><span class="method">PUT</span>/api/users/me/category-interests — 관심 카테고리</h2>
+      <div id="interestChecks" class="row" style="margin-top:8px"></div>
+      <button class="go" onclick="saveInterests()">저장</button>
+      <pre class="out" id="interestOut"></pre>
+    </div>
+
+  </div>
+
+  <!-- ========== 관리자 API ========== -->
+  <div class="panel" id="panel-admin">
+
+    <div class="card" style="border-color: var(--accent)">
+      <h2>관리자 권한 필요</h2>
+      <p class="hint" style="margin:0">
+        아래 기능은 <strong>공개 API 탭에서 로그인한 계정의 role이 editor 또는 admin</strong>이어야 동작합니다.
+        이 API들은 OpenAI 이미지 생성·외부 API 호출로 실제 비용이 나가서 열어둘 수 없습니다.<br />
+        권한 부여: <code>cd backend &amp;&amp; npm run grant:admin -- 이메일</code> (해당 계정으로 먼저 회원가입 필요)
+      </p>
+    </div>
+
+    <div class="card">
+      <h2><span class="method">POST/GET</span>/api/admin/keywords — 수집 대상 키워드</h2>
+      <p class="hint">여기 등록된 키워드가 네이버 데이터랩·유튜브 수집 배치의 대상이 됩니다. 트렌드 ID를 연결하면 수집 결과가 그 카드의 점수/단계를 갱신합니다.</p>
+      <div class="row">
+        <div><label>키워드 *</label><input id="kWord" placeholder="예: 크로플" /></div>
+        <div><label>연결할 트렌드 ID (선택)</label><input id="kTrendId" type="number" /></div>
+      </div>
+      <button class="go" onclick="createKeyword()">등록</button>
+      <button class="go ghost" onclick="listKeywords()">목록 조회</button>
+      <pre class="out" id="kwOut"></pre>
+    </div>
+
+    <div class="card" style="border-color: var(--accent)">
+      <h2><span class="method">POST</span>/api/admin/pipeline — 파이프라인 실행</h2>
+      <p class="hint">
+        <strong>발굴 → 수집 → 카드 갱신</strong>을 한 흐름으로 돌립니다. 예전에는 세 버튼으로 나뉘어 있었는데,
+        순서를 잘못 누르면(수집 전에 갱신 등) 결과가 비어서 하나로 합쳤습니다.<br /><br />
+
+        <strong>서버가 스스로도 돌립니다.</strong> 1시간마다 발굴(네이버), 하루 2회 유튜브 포함 발굴,
+        새벽 4시에 전체 실행. 아래 버튼은 그 스케줄을 기다리지 않고 지금 돌리는 용도입니다.<br /><br />
+
+        <strong>요청은 즉시 202로 끝나고 작업은 뒤에서 계속됩니다.</strong> 수 분씩 걸리는데 스케줄러는 보통
+        30초에서 끊기기 때문입니다. 진행 상황은 5초마다 자동으로 갱신되고, 이미 실행 중이면 중복 실행되지
+        않습니다(같은 API를 두 번 쓰면 할당량이 두 배로 나가므로).
+      </p>
+
+      <label style="margin-top:4px">실행할 작업</label>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px">
+        <button class="go" onclick="runPipeline({youtube:false, collect:true, autoRefresh:true})">전체 (네이버만)</button>
+        <button class="go ghost" onclick="runPipeline({youtube:true, collect:true, autoRefresh:true})">전체 (유튜브 포함)</button>
+        <button class="go ghost" onclick="runPipeline({youtube:false})">발굴만</button>
+        <button class="go ghost" onclick="runPipeline({archive:true})">지난 유행 발굴</button>
+        <button class="go ghost" onclick="pipelineStatus()">상태 확인</button>
+      </div>
+      <p class="hint" style="margin-top:0">
+        <strong>전체 (네이버만)</strong>이 기본입니다 — 발굴·수집·카드 갱신을 유튜브 없이 돌립니다.
+        유튜브 할당량이 초과된 날(한국시간 오후 4시경 초기화)에도 이 버튼은 동작합니다.
+        수집 단계의 유튜브 호출은 실패해도 네이버 지표만으로 카드가 만들어집니다.
+      </p>
+
+      <p class="hint" style="margin-top:0">
+        <strong>발굴</strong>은 블로그·카페 글 제목에서 후보 키워드를 뽑습니다. 쿼리당 5페이지(500건)씩,
+        21개 검색어 × 2개 소스 = 210회 호출(네이버 하루 한도의 0.8%).
+        <strong>유튜브 포함</strong>은 505 unit을 더 쓰므로 하루 몇 번만 씁니다.<br />
+        <strong>지난 유행 발굴</strong>은 방식이 다릅니다. 평소 발굴은 최신순이라 구조적으로 지금 뜨는 것만
+        잡힙니다 — 흑당버블티는 지금 아무도 글을 안 쓰니까요. 이 모드는 회고 검색어 32개를
+        <strong>정확도순으로 10페이지까지</strong> 훑어 오래전 글에 남은 과거 유행을 캐냅니다.
+        여기서 나온 키워드는 검색량이 낮게 나와 하락기 카드가 됩니다.<br />
+        <strong>전체 실행</strong>은 발굴 후 네이버 데이터랩·유튜브로 지표를 수집하고, 카드를 만들거나 갱신합니다.
+        아래 옵션이 이 단계에 적용됩니다.
+      </p>
+
+      <label>카드 생성 옵션 (전체 실행에만 적용)</label>
+      <div class="row">
+        <div><label>한 회차에 만들 카드 수</label><input id="atMaxNew" type="number" value="60" min="1" max="200" /></div>
+        <div><label>상세 생성 상위 N (과금)</label><input id="atRichCount" type="number" value="15" min="0" max="50" /></div>
+        <div>
+          <label>AI 이미지 생성</label>
+          <select id="atWithImage">
+            <option value="true">생성 (카드당 과금)</option>
+            <option value="false">생략</option>
+          </select>
+        </div>
+        <div>
+          <label>COLLECT_SECRET (선택)</label>
+          <input id="collectSecret" type="password" placeholder="관리자로 로그인했다면 비워둬도 됩니다" />
+        </div>
+      </div>
+      <p class="hint" style="margin-top:0">
+        카드는 "지금 뜨는 것"만이 아니라 <strong>감시 중인 디저트 전체의 카탈로그</strong>입니다.
+        확산 단계(태동기/상승기/전성기/하락기)로 나뉘고, 홈에 뭘 보여줄지는 프론트가
+        <code>sort=score&amp;limit=10</code>으로 고릅니다. 후보가 밀려 있으면 한 실행 안에서
+        <code>remaining</code>이 0이 될 때까지 최대 8회차까지 이어 만듭니다.<br />
+        <strong>상위 N개에만 공을 들입니다.</strong> 뉴스·블로그를 검색해 근거 기반 문구 + AI 이미지를 붙이고(카드당 과금),
+        나머지는 측정값 기반 문구만 붙입니다(즉시, 무료). 이미지는 첫 회차에만 생성합니다.<br />
+        <strong>문구는 지어내지 않습니다.</strong> 실제 게시물을 읽고 그 안에 있는 내용과 측정 수치만으로 씁니다.
+        근거 링크는 카드에 함께 저장되고, 게시물에 원인이 안 나오면 추측하지 않고 지표만 서술합니다.<br />
+        매 실행마다 <strong>기존 자동 카드도 다시 검사</strong>해서 교차검증에 실패한 건 내리고(<code>retired</code>),
+        다시 통과한 건 되살립니다(<code>restored</code>). 삭제가 아니라 발행 취소라 되돌릴 수 있습니다.
+        에디터가 직접 만든 카드는 건드리지 않습니다.
+      </p>
+
+      <div id="pipelineStatusBox"></div>
+      <pre class="out" id="pipelineOut"></pre>
+    </div>
+
+    <div class="card">
+      <h2><span class="method">GET</span>/api/admin/keywords/rising — 급상승 후보</h2>
+      <p class="hint">검색량이 오르고 있는 후보 키워드입니다. 여기서 골라 위쪽에서 트렌드 카드로 만들면 됩니다.</p>
+      <div class="row">
+        <div><label>최소 검색지수</label><input id="rMinIndex" type="number" value="1" min="0" /></div>
+        <div><label>개수</label><input id="rLimit" type="number" value="30" min="1" max="200" /></div>
+        <div>
+          <label>상시 메뉴 제외</label>
+          <select id="rExcludeStaples">
+            <option value="true">제외 (검색지수 40+ & 증감 5% 미만)</option>
+            <option value="false">포함</option>
+          </select>
+        </div>
+        <div>
+          <label>최소 소스 수</label>
+          <select id="rMinSources">
+            <option value="1">1개 이상 (전체)</option>
+            <option value="2">2개 이상 (교차 검증됨)</option>
+            <option value="3">3개 전부</option>
+          </select>
+        </div>
+        <div>
+          <label>계절 메뉴 제외</label>
+          <select id="rExcludeSeasonal">
+            <option value="true">제외 (작년 같은 달에도 높았던 것)</option>
+            <option value="false">포함</option>
+          </select>
+        </div>
+      </div>
+      <button class="go" onclick="loadRising()">조회</button>
+      <div id="risingList"></div>
+      <pre class="out" id="risingOut"></pre>
+    </div>
+
+  </div>
+</div>
+
+<script>
+// 이 페이지는 Express가 같은 오리진에서 서빙하므로 상대 경로로 호출하면 CORS 이슈가 없다.
+const API = '';
+
+// ---- Supabase Auth ----
+// access token은 localStorage에 보관해 새로고침해도 로그인이 유지되게 한다.
+let supabaseConfig = { supabaseUrl: null, supabaseAnonKey: null };
+
+function getToken() {
+  return localStorage.getItem('trendpick_access_token');
+}
+
+function setToken(token, email) {
+  if (token) {
+    localStorage.setItem('trendpick_access_token', token);
+    if (email) localStorage.setItem('trendpick_email', email);
+  } else {
+    localStorage.removeItem('trendpick_access_token');
+    localStorage.removeItem('trendpick_email');
+  }
+  renderAuthStatus();
+}
+
+function renderAuthStatus() {
+  const token = getToken();
+  const email = localStorage.getItem('trendpick_email');
+  document.getElementById('authDot').className = 'dot' + (token ? ' ok' : '');
+  document.getElementById('authText').textContent = token
+    ? `로그인됨${email ? ' — ' + email : ''}`
+    : '로그아웃 상태';
+}
+
+/** 인증이 필요한 요청에 붙일 헤더 */
+function authHeaders() {
+  const token = getToken();
+  return token ? { Authorization: 'Bearer ' + token } : {};
+}
+
+async function doAuth(mode) {
+  const email = document.getElementById('authEmail').value.trim();
+  const password = document.getElementById('authPassword').value;
+  if (!email || !password) return show('authOut', '이메일과 비밀번호를 입력하세요.');
+
+  if (!supabaseConfig.supabaseUrl || !supabaseConfig.supabaseAnonKey) {
+    return show('authOut',
+      'Supabase 설정이 없습니다. 백엔드 환경변수 SUPABASE_URL / SUPABASE_ANON_KEY를 확인하세요.');
+  }
+
+  // Supabase Auth REST를 직접 호출한다 (프론트에서는 supabase-js가 같은 일을 한다)
+  const base = supabaseConfig.supabaseUrl + '/auth/v1';
+  const url = mode === 'signup' ? base + '/signup' : base + '/token?grant_type=password';
+
+  show('authOut', mode === 'signup' ? '회원가입 중…' : '로그인 중…');
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: supabaseConfig.supabaseAnonKey,
+      },
+      body: JSON.stringify({ email, password }),
+    });
+    const body = await res.json();
+
+    if (!res.ok) {
+      return show('authOut', '실패: ' + (body.error_description || body.msg || body.message || res.status));
+    }
+
+    if (body.access_token) {
+      setToken(body.access_token, email);
+      show('authOut', {
+        message: mode === 'signup' ? '회원가입 + 로그인 완료' : '로그인 완료',
+        user_id: body.user?.id,
+        expires_in: body.expires_in,
+      });
+      loadProfile();
+    } else {
+      // 이메일 확인이 켜져 있으면 가입 직후 토큰이 안 나온다
+      show('authOut', {
+        message: '회원가입은 됐지만 토큰이 발급되지 않았습니다. 이메일 인증이 필요한 설정일 수 있습니다.',
+        hint: 'Supabase 대시보드 > Authentication > Providers > Email 에서 "Confirm email"을 끄면 바로 로그인됩니다.',
+        response: body,
+      });
+    }
+  } catch (e) {
+    show('authOut', '실패: ' + e.message);
+  }
+}
+
+function doLogout() {
+  setToken(null);
+  show('authOut', '로그아웃했습니다.');
+  show('profileOut', '');
+}
+
+async function loadProfile() {
+  if (!getToken()) return show('profileOut', '먼저 로그인하세요.');
+  try {
+    const data = await call('/api/users/me', { headers: authHeaders() });
+    show('profileOut', data);
+    document.getElementById('pStoreName').value = data.user.store_name ?? '';
+    document.getElementById('pRegionSi').value = data.user.region_si ?? '';
+    document.getElementById('pRegionGu').value = data.user.region_gu ?? '';
+  } catch (e) { show('profileOut', '실패: ' + e.message); }
+}
+
+async function saveProfile() {
+  if (!getToken()) return show('profileOut', '먼저 로그인하세요.');
+  try {
+    show('profileOut', await call('/api/users/me', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify({
+        storeName: document.getElementById('pStoreName').value.trim() || undefined,
+        regionSi: document.getElementById('pRegionSi').value.trim() || undefined,
+        regionGu: document.getElementById('pRegionGu').value.trim() || undefined,
+      }),
+    }));
+  } catch (e) { show('profileOut', '실패: ' + e.message); }
+}
+
+function show(elId, data) {
+  document.getElementById(elId).textContent =
+    typeof data === 'string' ? data : JSON.stringify(data, null, 2);
+}
+
+async function call(path, options = {}) {
+  const res = await fetch(API + path, options);
+  const text = await res.text();
+  let body;
+  try { body = text ? JSON.parse(text) : null; } catch { body = text; }
+  if (!res.ok) {
+    const msg = body && body.error ? body.error : res.statusText;
+    throw new Error(`${res.status} ${msg}`);
+  }
+  return body;
+}
+
+// ---- 탭 전환 ----
+document.querySelectorAll('.tabs button').forEach((btn) => {
+  btn.onclick = () => {
+    document.querySelectorAll('.tabs button').forEach((b) => b.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach((p) => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('panel-' + btn.dataset.tab).classList.add('active');
+  };
+});
+
+// ---- 헬스체크 + 카테고리 초기 로딩 ----
+async function init() {
+  document.getElementById('collectSecret').value =
+    localStorage.getItem('trendpick_collect_secret') || '';
+  renderAuthStatus();
+
+  try {
+    supabaseConfig = await call('/api/config');
+  } catch {
+    // 설정을 못 가져와도 공개 API는 동작하므로 계속 진행
+  }
+
+  try {
+    const h = await call('/health');
+    document.getElementById('healthDot').className = 'dot ok';
+    document.getElementById('healthText').textContent = `서버 정상 — ${h.service} (${h.time})`;
+  } catch (e) {
+    document.getElementById('healthDot').className = 'dot err';
+    document.getElementById('healthText').textContent = `서버 연결 실패: ${e.message} — backend가 실행 중인지 확인하세요.`;
+    return;
+  }
+
+  try {
+    const { categories } = await call('/api/categories');
+    const fCat = document.getElementById('fCategory');
+    const checks = document.getElementById('interestChecks');
+    categories.forEach((c) => {
+      fCat.insertAdjacentHTML('beforeend', `<option value="${c.slug}">${c.name}</option>`);
+      checks.insertAdjacentHTML('beforeend',
+        `<div style="flex:0 0 auto"><label style="display:flex;align-items:center;gap:6px;margin:0">
+           <input type="checkbox" style="width:auto" class="interest" value="${c.id}" /> ${c.name}
+         </label></div>`);
+    });
+    loadTrends();
+  } catch (e) {
+    show('detailOut', '카테고리 로딩 실패: ' + e.message);
+  }
+
+  // 파이프라인 상태는 DB에 남아 있어서, 페이지를 새로 열어도 직전 실행이 보인다.
+  // 서버가 스케줄로 돌린 것도 여기서 확인된다.
+  pipelineStatus();
+}
+
+const STATUS_LABEL = { emerging: '태동기', rising: '상승기', peak: '전성기', declining: '하락기' };
+
+// ---- 공개 API ----
+async function loadTrends() {
+  const params = new URLSearchParams();
+  const c = document.getElementById('fCategory').value;
+  const s = document.getElementById('fStatus').value;
+  const l = document.getElementById('fLimit').value;
+  const so = document.getElementById('fSort').value;
+  if (c) params.set('category', c);
+  if (s) params.set('status', s);
+  if (l) params.set('limit', l);
+  if (so) params.set('sort', so);
+
+  const list = document.getElementById('trendList');
+  const empty = document.getElementById('trendEmpty');
+  list.innerHTML = '';
+  empty.style.display = 'none';
+
+  try {
+    const { trends } = await call('/api/trends?' + params.toString());
+    if (!trends.length) { empty.style.display = 'block'; return; }
+    trends.forEach((t) => {
+      const div = document.createElement('div');
+      div.className = 'trend-card';
+      div.onclick = () => {
+        document.getElementById('detailId').value = t.id;
+        document.getElementById('bmTrendId').value = t.id;
+        loadDetail();
+      };
+      const growth = [];
+      // 검색 증감률은 28일 평균 vs 이전 28일 평균 — 반짝이 아니라 자리 잡는 유행 기준
+      if (t.search_growth_rate != null) growth.push(`검색 ${fmtPct(t.search_growth_rate)}`);
+      if (t.mention_growth_rate != null) growth.push(`언급 ${fmtPct(t.mention_growth_rate)}`);
+      const points = (t.score_history || []).length;
+
+      div.innerHTML = `
+        <h3>${escapeHtml(t.title)}</h3>
+        <p>${escapeHtml(t.summary || '요약 없음')}</p>
+        <div class="trend-meta">
+          <span class="badge gray">${escapeHtml(t.category_name)}</span>
+          <span class="badge">${STATUS_LABEL[t.status] || t.status}</span>
+          <span class="score">score ${t.score ?? '-'}</span>
+        </div>
+        <div class="trend-meta" style="font-size:12px;color:var(--muted)">
+          ${growth.length ? growth.join(' · ') : '증감률 데이터 없음'}
+          <span style="margin-left:auto" title="카드 생성 후 일일 수집을 거친 횟수. 매일 새벽 수집마다 1씩 늘어납니다">점수 이력 ${points}일</span>
+        </div>`;
+      list.appendChild(div);
+    });
+  } catch (e) {
+    empty.style.display = 'block';
+    empty.textContent = '조회 실패: ' + e.message;
+  }
+}
+
+async function loadDetail() {
+  const id = document.getElementById('detailId').value;
+  if (!id) return show('detailOut', '트렌드 ID를 입력하세요.');
+  try {
+    show('detailOut', await call('/api/trends/' + id));
+  } catch (e) { show('detailOut', '실패: ' + e.message); }
+}
+
+async function bookmark(method) {
+  const tid = document.getElementById('bmTrendId').value;
+  if (!getToken()) return show('bmOut', '먼저 로그인하세요.');
+  const headers = authHeaders();
+  try {
+    if (method === 'GET') {
+      return show('bmOut', await call('/api/users/me/bookmarks', { headers }));
+    }
+    if (!tid) return show('bmOut', '트렌드 ID를 입력하세요.');
+    const r = await call(`/api/users/me/bookmarks/${tid}`, { method, headers });
+    show('bmOut', r ?? `${method} 성공 (204 No Content)`);
+  } catch (e) { show('bmOut', '실패: ' + e.message); }
+}
+
+async function saveInterests() {
+  if (!getToken()) return show('interestOut', '먼저 로그인하세요.');
+  const ids = [...document.querySelectorAll('.interest:checked')].map((el) => Number(el.value));
+  try {
+    show('interestOut', await call('/api/users/me/category-interests', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify({ categoryIds: ids }),
+    }));
+  } catch (e) { show('interestOut', '실패: ' + e.message); }
+}
+
+// ---- 관리자 API ----
+async function createKeyword() {
+  const keyword = document.getElementById('kWord').value.trim();
+  const trendId = document.getElementById('kTrendId').value;
+  if (!keyword) return show('kwOut', 'keyword는 필수입니다.');
+  try {
+    show('kwOut', await call('/api/admin/keywords', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify({ keyword, trendId: trendId ? Number(trendId) : undefined }),
+    }));
+  } catch (e) { show('kwOut', '실패: ' + e.message); }
+}
+
+async function listKeywords() {
+  try { show('kwOut', await call('/api/admin/keywords', { headers: authHeaders() })); }
+  catch (e) { show('kwOut', '실패: ' + e.message); }
+}
+
+/**
+ * 파이프라인 실행.
+ *
+ * 202로 바로 끝나므로 응답만 보면 아무 일도 안 일어난 것처럼 보인다.
+ * 시작시킨 뒤 5초마다 상태를 폴링해서 끝날 때까지 보여준다.
+ */
+let pipelineTimer = null;
+
+async function runPipeline(opts) {
+  if (!getToken() && !collectSecret()) {
+    return renderPipeline(null, '먼저 로그인하세요 (관리자 권한 필요). 또는 COLLECT_SECRET을 입력하세요.');
+  }
+
+  // 카드 생성 옵션은 화면 입력값에서 읽는다 (전체 실행일 때만 의미가 있다)
+  const body = {
+    ...opts,
+    maxNewCards: Number(document.getElementById('atMaxNew').value) || 60,
+    richCount: Number(document.getElementById('atRichCount').value),
+    withImage: document.getElementById('atWithImage').value === 'true',
+  };
+
+  renderPipeline(null, '시작 요청 중…');
+  try {
+    await call('/api/admin/pipeline', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders(), ...secretHeader() },
+      body: JSON.stringify(body),
+    });
+  } catch (e) {
+    // 409 = 이미 실행 중 (스케줄이 먼저 돌고 있을 때 흔하다). 실패가 아니라
+    // "지금 도는 걸 지켜보면 되는" 상황이므로 폴링으로 넘어간다.
+    if (!String(e.message).startsWith('409')) {
+      return renderPipeline(null, '실패: ' + e.message);
+    }
+    renderPipeline(null, '이미 실행 중입니다 — 진행 중인 작업을 아래에 표시합니다.');
+  }
+
+  await pipelineStatus();
+  clearInterval(pipelineTimer);
+  pipelineTimer = setInterval(async () => {
+    const s = await pipelineStatus();
+    if (s && !s.running) {
+      clearInterval(pipelineTimer);
+      loadTrends(); // 카드가 바뀌었을 수 있으니 공개 피드를 다시 읽는다
+    }
+  }, 5000);
+}
+
+async function pipelineStatus() {
+  try {
+    const s = await call('/api/admin/pipeline', { headers: authHeaders() });
+    renderPipeline(s);
+    return s;
+  } catch (e) {
+    renderPipeline(null, '실패: ' + e.message);
+    return null;
+  }
+}
+
+const STAGE_LABEL = { discover: '발굴', collect: '수집', autoRefresh: '카드 갱신' };
+
+/** 상태 박스 + 원본 JSON을 함께 그린다 */
+function renderPipeline(status, message) {
+  const box = document.getElementById('pipelineStatusBox');
+
+  if (message) {
+    box.innerHTML = `<div style="margin-top:14px;padding:14px 16px;border-radius:8px;
+      background:var(--accent-soft);border:1px solid var(--accent);font-size:14px">${message}</div>`;
+    if (!status) { show('pipelineOut', ''); return; }
+  }
+
+  const run = status?.lastRun;
+  if (!run) {
+    if (!message) {
+      box.innerHTML = `<div style="margin-top:14px;padding:14px 16px;border-radius:8px;
+        background:var(--accent-soft);border:1px solid var(--accent);font-size:14px">
+        아직 실행된 적이 없습니다. 위 버튼을 눌러주세요.</div>`;
+    }
+    show('pipelineOut', '');
+    return;
+  }
+
+  const running = status.running;
+  const d = run.discovery, c = run.collect, a = run.autoTrends;
+  const parts = [];
+  if (d) parts.push(`발굴: 후보 ${d.discovered}개 (신규 ${d.inserted} / 갱신 ${d.updated}) · 다중소스 ${d.multiSource}`);
+  if (c) parts.push(`수집: 네이버 ${c.naverProcessed} · 유튜브 ${c.youtubeProcessed}${c.failed ? ` · 실패 ${c.failed}` : ''}`);
+  if (a) parts.push(`카드: 생성 ${a.created} · 갱신 ${a.refreshed} · 상세 ${a.enriched} · 내림 ${a.retired} · 되살림 ${a.restored} · 남은 후보 ${a.remaining}`);
+
+  const ok = !running && run.errors.length === 0;
+  box.innerHTML = `
+    <div style="margin-top:14px;padding:14px 16px;border-radius:8px;
+                background:${ok ? '#eef6ef' : 'var(--accent-soft)'};
+                border:1px solid ${ok ? '#3f9e5f' : 'var(--accent)'}">
+      <div style="font-size:15px;font-weight:600;margin-bottom:6px">
+        ${running
+          ? `진행 중 — ${STAGE_LABEL[run.currentStage] ?? '준비'} 단계`
+          : ok ? '완료' : `완료 (오류 ${run.errors.length}건)`}
+      </div>
+      <div style="font-size:13px;color:var(--muted);line-height:1.7">
+        ${parts.length ? parts.join('<br />') : '아직 결과 없음'}
+      </div>
+      ${run.errors.length ? `<details style="margin-top:10px;font-size:13px">
+        <summary style="cursor:pointer">오류 ${run.errors.length}건 보기</summary>
+        <div style="margin-top:8px;color:var(--muted);white-space:pre-wrap">${
+          run.errors.map(e => String(e).slice(0, 200)).join('\n')
+        }</div></details>` : ''}
+    </div>`;
+
+  show('pipelineOut', run);
+}
+
+async function loadRising() {
+  const params = new URLSearchParams({
+    minIndex: document.getElementById('rMinIndex').value || '1',
+    limit: document.getElementById('rLimit').value || '30',
+    excludeStaples: document.getElementById('rExcludeStaples').value,
+    excludeSeasonal: document.getElementById('rExcludeSeasonal').value,
+    minSources: document.getElementById('rMinSources').value,
+  });
+  const list = document.getElementById('risingList');
+  list.innerHTML = '';
+  show('risingOut', '');
+  try {
+    const { keywords, note } = await call('/api/admin/keywords/rising?' + params, { headers: authHeaders() });
+    if (!keywords.length) {
+      show('risingOut', '아직 수집된 후보가 없습니다. 발굴 → 수집 배치를 먼저 실행하세요.');
+      return;
+    }
+    const SRC_LABEL = { blog: '블로그', cafe: '카페', youtube: '유튜브' };
+    const rows = keywords.map((k) => `
+      <tr>
+        <td style="padding:6px 10px;font-weight:600;text-align:right">${k.trend_signal ?? '-'}</td>
+        <td style="padding:6px 10px">
+          ${escapeHtml(k.keyword)}
+          ${k.is_seasonal ? '<span class="badge gray" style="margin-left:6px">계절</span>' : ''}
+        </td>
+        <td style="padding:6px 10px">
+          ${(k.sources || []).map((s) => `<span class="badge gray" style="margin-right:3px">${SRC_LABEL[s] || s}</span>`).join('') || '—'}
+        </td>
+        <td style="padding:6px 10px;text-align:right">${k.mention_growth_rate != null ? fmtPct(k.mention_growth_rate) : '—'}</td>
+        <td style="padding:6px 10px;text-align:right">${k.growth_rate != null ? fmtPct(k.growth_rate) : '—'}</td>
+        <td style="padding:6px 10px;text-align:right">${k.yoy_growth_rate != null ? fmtPct(k.yoy_growth_rate) : '—'}</td>
+        <td style="padding:6px 10px;text-align:right;color:var(--muted)">${k.view_velocity != null ? Number(k.view_velocity).toLocaleString() : '—'}</td>
+        <td style="padding:6px 10px;text-align:right;color:var(--muted)">${k.mention_count ?? 0}건</td>
+        <td style="padding:6px 10px;text-align:right;color:var(--muted)">${k.search_index ?? '-'}</td>
+      </tr>`).join('');
+    list.innerHTML = `
+      <table style="width:100%;border-collapse:collapse;margin-top:12px;font-size:13px">
+        <thead><tr style="border-bottom:1px solid var(--border);color:var(--muted);font-size:12px">
+          <th style="text-align:right;padding:6px 10px">신호</th>
+          <th style="text-align:left;padding:6px 10px">키워드</th>
+          <th style="text-align:left;padding:6px 10px">소스</th>
+          <th style="text-align:right;padding:6px 10px">언급 증가</th>
+          <th style="text-align:right;padding:6px 10px">검색 증가</th>
+          <th style="text-align:right;padding:6px 10px">전년 대비</th>
+          <th style="text-align:right;padding:6px 10px">조회수 속도</th>
+          <th style="text-align:right;padding:6px 10px">최근 글</th>
+          <th style="text-align:right;padding:6px 10px">검색지수</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+      <p class="hint">${escapeHtml(note || '')}</p>`;
+  } catch (e) { show('risingOut', '실패: ' + e.message); }
+}
+
+/** COLLECT_SECRET 입력값. 매번 다시 입력하지 않도록 브라우저에만 보관한다 */
+function collectSecret() {
+  const v = document.getElementById('collectSecret').value.trim();
+  if (v) localStorage.setItem('trendpick_collect_secret', v);
+  return v;
+}
+
+/**
+ * 파이프라인은 비밀키 또는 관리자 로그인 중 하나면 통과한다.
+ * 관리자로 로그인했다면 비밀키는 필요 없다.
+ */
+function secretHeader() {
+  const v = collectSecret();
+  return v ? { 'x-collect-secret': v } : {};
+}
+
+function fmtPct(v) {
+  const n = Number(v);
+  return (n > 0 ? '+' : '') + n.toFixed(1) + '%';
+}
+
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, (c) =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+init();
+</script>
+</body>
+</html>

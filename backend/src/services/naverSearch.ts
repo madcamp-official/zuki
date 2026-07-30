@@ -1,0 +1,287 @@
+/**
+ * 네이버 검색 오픈 API 연동 (블로그 / 카페글)
+ *
+ * 왜 필요한가:
+ *   네이버 데이터랩은 "내가 준 키워드가 얼마나 뜨나"만 답한다. 급상승 키워드
+ *   목록을 주는 API는 없다(실시간 검색어는 2021년 폐지). 그래서 "뭐가 뜨나"를
+ *   알려면 실제 콘텐츠를 읽어야 한다.
+ *
+ *   블로그·카페글 검색을 최신순으로 부르면 "지금 사람들이 카페/디저트에 대해
+ *   쓰고 있는 글"의 제목을 얻을 수 있고, 거기서 키워드를 추출한다.
+ *
+ * 인증: 데이터랩과 동일한 X-Naver-Client-Id / X-Naver-Client-Secret
+ * 한도: 검색 API는 하루 25,000회 (데이터랩 1,000회와 별도)
+ */
+
+const SEARCH_BASE = 'https://openapi.naver.com/v1/search';
+
+export type NaverSearchCorpus = 'blog' | 'cafearticle' | 'news';
+
+export interface NaverSearchItem {
+  title: string;
+  /** 본문 발췌. 검색어 주변 문맥이 담겨 있어 "왜 뜨는지"의 단서가 된다 */
+  description: string;
+  link: string;
+  postDate: string | null;
+}
+
+export interface NaverSearchResult {
+  corpus: NaverSearchCorpus;
+  query: string;
+  titles: string[];
+  /** 제목 + 본문 발췌 + 링크. 근거 수집용 */
+  items: NaverSearchItem[];
+  /**
+   * 게시일(YYYY-MM-DD) 목록. 블로그 코퍼스만 postdate를 준다.
+   * 카페글은 cafename/cafeurl만 오고 날짜가 없어 빈 배열이 된다.
+   */
+  postDates: string[];
+  /** 전체 검색 결과 수 (누적값이라 "속도"가 아님에 주의) */
+  total: number;
+}
+
+/**
+ * 호출 간격 제어 + 429 재시도.
+ *
+ * 네이버 검색 API에는 하루 25,000회와 **별개로 초당 호출 제한**이 있다.
+ * 발굴은 21개 쿼리를 쉬는 시간 없이 연달아 던지는데, 그러면 하루 한도의
+ * 0.2%밖에 안 쓰고도 `429 errorCode 012 (Rate limit exceeded)`가 난다.
+ * 실측에서 21회 중 1~2회가 이 이유로 실패했다.
+ *
+ * 두 겹으로 막는다:
+ *   1) 모든 호출을 하나의 큐로 직렬화하고 최소 간격을 둔다 (예방)
+ *   2) 그래도 429가 나면 간격을 늘려가며 재시도한다 (복구)
+ *
+ * 직렬화하는 이유는, 발굴·수집·근거수집이 동시에 돌 수 있어서 각자 delay를
+ * 걸어봐야 합쳐진 순간 부하는 제어되지 않기 때문이다.
+ */
+const MIN_INTERVAL_MS = Number(process.env.NAVER_SEARCH_INTERVAL_MS) || 120;
+const MAX_RETRIES = 3;
+
+let queueTail: Promise<unknown> = Promise.resolve();
+let lastCallAt = 0;
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** fn을 전역 큐에 넣어 최소 간격을 지키며 실행한다 */
+function schedule<T>(fn: () => Promise<T>): Promise<T> {
+  const result = queueTail.then(async () => {
+    const wait = MIN_INTERVAL_MS - (Date.now() - lastCallAt);
+    if (wait > 0) await sleep(wait);
+    lastCallAt = Date.now();
+    return fn();
+  });
+  // 큐는 성공/실패와 무관하게 이어져야 한다. 실패로 체인이 끊기면 이후 호출이 전부 막힌다
+  queueTail = result.catch(() => undefined);
+  return result;
+}
+
+/** 네이버 검색 결과 제목에는 <b> 강조 태그와 HTML 엔티티가 섞여 온다 */
+function stripHtml(s: string): string {
+  return s
+    .replace(/<[^>]*>/g, '')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, ' ')
+    .trim();
+}
+
+/**
+ * 한 코퍼스에서 검색어로 글을 가져온다.
+ *
+ * 정렬 기본값이 용도에 따라 다르다:
+ *   - 블로그/카페 (date, 최신순): 트렌드 발굴·게시량 측정이 목적이라 신선도가 중요
+ *   - 뉴스 (sim, 정확도순): "왜 뜨는지" 배경을 찾는 게 목적이라 관련성이 중요.
+ *     최신순으로 뽑으면 키워드가 본문에 스치기만 한 무관한 기사가 올라온다
+ *     (실측: '씬쿠키' 검색에 "F1 최고 미남 샤를 르클레르의 피앙세는?" 기사가 걸림)
+ */
+export async function searchNaver(
+  query: string,
+  corpus: NaverSearchCorpus = 'blog',
+  display = 100,
+  start = 1,
+  sort: 'date' | 'sim' = corpus === 'news' ? 'sim' : 'date'
+): Promise<NaverSearchResult> {
+  const clientId = process.env.NAVER_CLIENT_ID;
+  const clientSecret = process.env.NAVER_CLIENT_SECRET;
+  if (!clientId || !clientSecret) {
+    throw new Error('NAVER_CLIENT_ID / NAVER_CLIENT_SECRET이 설정되지 않았습니다.');
+  }
+
+  const params = new URLSearchParams({
+    query,
+    display: String(Math.min(display, 100)), // API 상한 100
+    start: String(Math.min(Math.max(start, 1), 1000)), // API 상한 1000
+    sort,
+  });
+
+  const json = await schedule(async () => {
+    for (let attempt = 0; ; attempt += 1) {
+      const res = await fetch(`${SEARCH_BASE}/${corpus}.json?${params}`, {
+        headers: {
+          'X-Naver-Client-Id': clientId,
+          'X-Naver-Client-Secret': clientSecret,
+        },
+      });
+
+      if (res.ok) {
+        return (await res.json()) as {
+          total?: number;
+          items?: { title: string; description?: string; link?: string; postdate?: string }[];
+        };
+      }
+
+      const body = (await res.text()).slice(0, 200);
+
+      // 429는 "잠깐 쉬었다 다시 오라"는 뜻이라 재시도할 가치가 있다.
+      // 401(키 문제)·400(쿼리 문제)은 다시 던져도 같은 결과라 즉시 실패시킨다.
+      if (res.status === 429 && attempt < MAX_RETRIES) {
+        const backoff = MIN_INTERVAL_MS * Math.pow(3, attempt + 1); // 360ms -> 1.1s -> 3.2s
+        console.warn(
+          `[naverSearch] 429 rate limit — ${backoff}ms 후 재시도 (${attempt + 1}/${MAX_RETRIES}) "${query}"`
+        );
+        await sleep(backoff);
+        lastCallAt = Date.now();
+        continue;
+      }
+
+      throw new Error(`네이버 ${corpus} 검색 오류: ${res.status} ${body}`);
+    }
+  });
+
+  const rawItems = json.items ?? [];
+
+  const toIsoDate = (d?: string) =>
+    d && /^\d{8}$/.test(d) ? `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}` : null;
+
+  return {
+    corpus,
+    query,
+    titles: rawItems.map((i) => stripHtml(i.title)),
+    items: rawItems.map((i) => ({
+      title: stripHtml(i.title),
+      description: stripHtml(i.description ?? ''),
+      link: i.link ?? '',
+      postDate: toIsoDate(i.postdate),
+    })),
+    // postdate는 'YYYYMMDD' 형식으로 온다
+    postDates: rawItems
+      .map((i) => toIsoDate(i.postdate))
+      .filter((d): d is string => d !== null),
+    total: json.total ?? 0,
+  };
+}
+
+export interface MentionTrend {
+  keyword: string;
+  /** 최근 7일간 올라온 글 수 */
+  recentCount: number;
+  /** 그 이전 7일간 올라온 글 수 */
+  previousCount: number;
+  /** 증가율(%). 이전 기간이 0이면 null */
+  growthRate: number | null;
+  /** 실제로 확보한 기간(일). 14일에 못 미치면 신뢰도가 낮다 */
+  windowDays: number;
+  /** 훑어본 글 수 */
+  postsScanned: number;
+  /** 소모한 API 호출 수 */
+  apiCalls: number;
+}
+
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+/**
+ * 키워드의 "언급 속도 변화"를 측정한다 — 진짜 트렌드 신호.
+ *
+ * 왜 이게 필요한가:
+ *   제목에서 단어가 몇 번 나왔는지 세는 것만으로는 "화제"와 "흔함"을 구분할 수 없다.
+ *   '소금빵'이 7번 나온 게 많은 건지 적은 건지 알 수 없기 때문이다.
+ *   진짜 신호는 "평소 2건이던 게 이번 주에 12건이 됐다"는 변화량이다.
+ *
+ * 어떻게 가능한가:
+ *   네이버 블로그 검색 응답에 postdate(게시 날짜)가 들어온다.
+ *   최신순으로 긁어서 날짜별로 세면 일별 게시량이 나온다.
+ *   start 파라미터로 최대 1,000개까지 거슬러 올라갈 수 있어서,
+ *   과거 데이터를 쌓아두지 않아도 오늘 바로 계산할 수 있다.
+ *
+ * 한계:
+ *   아주 인기 있는 키워드는 1,000개가 며칠치밖에 안 될 수 있다.
+ *   그 경우 windowDays가 14 미만으로 나오므로 호출부에서 감안해야 한다.
+ */
+export async function measureMentionTrend(
+  keyword: string,
+  maxPages = 10 // API 상한(start<=1000)까지. 검색 API는 하루 25,000회라 여유롭다
+): Promise<MentionTrend> {
+  const dates: string[] = [];
+  let apiCalls = 0;
+
+  const today = new Date();
+  const cutoff = new Date(today.getTime() - 14 * MS_PER_DAY);
+
+  for (let page = 0; page < maxPages; page++) {
+    const start = page * 100 + 1;
+    if (start > 1000) break; // API 상한
+
+    // 게시 날짜를 세는 게 목적이라 반드시 최신순이어야 한다
+    const result = await searchNaver(keyword, 'blog', 100, start, 'date');
+    apiCalls += 1;
+    dates.push(...result.postDates);
+
+    if (result.postDates.length === 0) break; // 더 없음
+
+    // 가장 오래된 글이 14일 이전이면 필요한 구간을 다 덮은 것
+    const oldest = result.postDates[result.postDates.length - 1];
+    if (new Date(oldest) < cutoff) break;
+  }
+
+  const recentCutoff = new Date(today.getTime() - 7 * MS_PER_DAY);
+  const previousCutoff = new Date(today.getTime() - 14 * MS_PER_DAY);
+
+  let recentCount = 0;
+  let previousCount = 0;
+  let oldestSeen: Date | null = null;
+
+  for (const d of dates) {
+    const date = new Date(d);
+    if (!oldestSeen || date < oldestSeen) oldestSeen = date;
+    if (date >= recentCutoff) recentCount += 1;
+    else if (date >= previousCutoff) previousCount += 1;
+  }
+
+  const windowDays = oldestSeen
+    ? Math.round((today.getTime() - oldestSeen.getTime()) / MS_PER_DAY)
+    : 0;
+
+  /**
+   * 증가율은 아래 두 조건을 모두 만족할 때만 낸다.
+   *
+   *  1) 14일 구간을 실제로 덮었을 것 (windowDays >= 14)
+   *     인기 키워드는 1,000건이 며칠치밖에 안 돼 이전 7일에 도달하지 못한다.
+   *     그 경우 previousCount가 0이 되어 "무한 증가"처럼 보이는데, 사실은
+   *     데이터가 없는 것이다.
+   *
+   *  2) 표본이 최소한은 될 것 (양쪽 합계 >= MIN_SAMPLE)
+   *     글 5건으로 계산한 "+66.7%"는 노이즈다. 값을 만들어내느니 null이 낫다.
+   *
+   * 7일 단위로 비교하는 이유는 요일 효과 때문이다. 블로그 게시량은 주말·평일
+   * 편차가 커서, 창 길이가 7의 배수가 아니면 요일이 상쇄되지 않는다.
+   */
+  const MIN_SAMPLE = 10;
+  const sample = recentCount + previousCount;
+  const reliable = windowDays >= 14 && sample >= MIN_SAMPLE && previousCount > 0;
+
+  return {
+    keyword,
+    recentCount,
+    previousCount,
+    growthRate: reliable
+      ? Math.round(((recentCount - previousCount) / previousCount) * 1000) / 10
+      : null,
+    windowDays,
+    postsScanned: dates.length,
+    apiCalls,
+  };
+}
