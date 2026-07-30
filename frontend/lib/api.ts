@@ -155,20 +155,16 @@ export async function fetchTrendById(id: string): Promise<{
       searchIndexHistory: RawSearchIndexPoint[];
     }>(`/api/trends/${id}`);
 
-    // 60일치 일별 값. 라벨은 다 붙이면 겹치므로 5~6개만 균등하게 뽑는다
+    // 차트 컴포넌트가 균등한 5개 지점을 골라 표시하므로 모든 날짜를 전달한다.
     const points = (searchIndexHistory ?? []).map((p) => ({
       value: Math.round(Number(p.search_index)),
       date: String(p.recorded_date).slice(5, 10).replace("-", "/"), // 'MM/DD'
     }));
-    const labelStep = Math.max(1, Math.ceil(points.length / 6));
-    const labels = points
-      .filter((_, i) => i % labelStep === 0)
-      .map((p) => p.date);
 
     return {
       trend: toTrendItem(trend, 0),
       scoreHistory: scoreHistory.map((point) => Math.round(Number(point.score))),
-      searchHistory: { values: points.map((p) => p.value), labels },
+      searchHistory: { values: points.map((p) => p.value), labels: points.map((p) => p.date) },
     };
   } catch {
     return null;

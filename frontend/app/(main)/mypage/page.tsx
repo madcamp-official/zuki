@@ -114,15 +114,30 @@ export default function MyPage() {
   }
 
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-8 px-6 py-8">
+    <div className="mx-auto flex max-w-5xl flex-col gap-7 px-6 py-9">
       <div>
-        <h1 className="font-heading text-3xl text-dark">마이페이지</h1>
-        <p className="mt-2 text-base text-gray-500">
-          즐겨찾기, 관심 카테고리, 매장 정보를 관리하세요
+        <h1 className="font-heading text-4xl text-dark">내 매장 대시보드</h1>
+        <p className="mt-2 text-lg text-gray-500">
+          {storeName ? `${storeName} 사장님, 오늘도 매장 트렌드를 확인해 보세요.` : "매장에 딱 맞는 트렌드를 한눈에 관리하세요."}
         </p>
       </div>
 
-      <section className="rounded-2xl bg-white p-6 shadow-sm">
+      <section className="grid gap-4 sm:grid-cols-3">
+        <div className="rounded-[24px] bg-gradient-to-br from-[#ff4d6d] to-[#e72c42] p-5 text-white shadow-sm"><p className="text-sm font-semibold text-white/80">오늘의 관심 트렌드</p><p className="mt-2 text-3xl font-extrabold">{bookmarked.length}개</p><p className="mt-2 text-sm text-white/90">저장한 메뉴를 바로 확인하세요</p></div>
+        <div className="rounded-[24px] border border-[#f1dfd3] bg-white p-5"><p className="text-sm font-semibold text-gray-400">알림 브리핑</p><p className="mt-2 text-2xl font-extrabold text-dark">{notifEnabled ? "켜짐" : "꺼짐"}</p><p className="mt-2 text-sm text-gray-500">매일 아침 새 트렌드를 받아요</p></div>
+        <div className="rounded-[24px] border border-[#f1dfd3] bg-white p-5"><p className="text-sm font-semibold text-gray-400">관심 분야</p><p className="mt-2 text-2xl font-extrabold text-dark">{interests.length}개</p><p className="mt-2 text-sm text-gray-500">맞춤형 트렌드를 우선 추천해요</p></div>
+      </section>
+
+      <section className="rounded-[24px] border border-[#f1dfd3] bg-white p-5">
+        <div className="mb-4 flex items-center justify-between"><div><h2 className="font-heading text-2xl text-dark">사장님 빠른 메뉴</h2><p className="mt-1 text-sm text-gray-400">자주 쓰는 기능을 바로 실행하세요</p></div><span className="text-2xl">✨</span></div>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <Link href="/ranking" className="rounded-2xl bg-[#fff3f4] p-4 transition-transform hover:-translate-y-0.5"><span className="text-2xl">🔥</span><p className="mt-2 font-bold text-dark">오늘의 급상승 메뉴</p><p className="mt-1 text-sm text-gray-500">지금 뜨는 메뉴 확인</p></Link>
+          <Link href="/category" className="rounded-2xl bg-[#fff8e9] p-4 transition-transform hover:-translate-y-0.5"><span className="text-2xl">🧁</span><p className="mt-2 font-bold text-dark">메뉴 아이디어 찾기</p><p className="mt-1 text-sm text-gray-500">카테고리별 트렌드 탐색</p></Link>
+          <button type="button" onClick={() => setNotifEnabled((prev) => !prev)} className="rounded-2xl bg-[#f4f0ff] p-4 text-left transition-transform hover:-translate-y-0.5"><span className="text-2xl">🔔</span><p className="mt-2 font-bold text-dark">브리핑 알림 {notifEnabled ? "끄기" : "켜기"}</p><p className="mt-1 text-sm text-gray-500">매일 아침 맞춤 알림</p></button>
+        </div>
+      </section>
+
+      <section className="rounded-[24px] border border-[#f1dfd3] bg-white p-6 shadow-sm">
         <h2 className="font-heading text-2xl text-dark">즐겨찾기</h2>
         {loadingBookmarks ? (
           <p className="mt-4 text-base text-gray-400">불러오는 중이에요...</p>
