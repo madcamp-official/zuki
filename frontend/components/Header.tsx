@@ -107,14 +107,14 @@ export default function Header() {
           {loaded && user ? (
             <button
               onClick={handleLogout}
-              className="rounded-full border border-strawberry/30 px-5 py-2 font-button text-sm font-semibold text-strawberry transition-colors hover:bg-rose-50"
+              className="rounded-full border border-strawberry/30 px-5 py-2 font-button text-sm font-semibold text-strawberry transition-colors hover:bg-orange-50"
             >
               로그아웃
             </button>
           ) : (
             <Link
               href="/login"
-              className="rounded-full bg-strawberry px-5 py-2 font-button text-sm font-semibold text-white transition-colors hover:bg-rose-500"
+              className="rounded-full bg-strawberry px-5 py-2 font-button text-sm font-semibold text-white transition-colors hover:opacity-90"
             >
               로그인
             </Link>

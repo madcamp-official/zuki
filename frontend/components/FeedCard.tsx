@@ -10,9 +10,8 @@ import type { TrendItem } from "@/lib/trends";
 import { addBookmark, removeBookmark } from "@/lib/api";
 
 /**
- * SNS 피드 포스트처럼 트렌드 하나를 크게 보여주는 카드.
- * TrendCard(격자용 미니 카드)와 달리 세로로 길게, 이유·수치를 함께 노출해
- * 홈 화면을 스크롤하며 훑어보는 경험을 만든다.
+ * SNS 피드 포스트 느낌의 카드. TrendCard(그리드용 미니 카드)보다 크게
+ * 이유·수치를 함께 보여주되, 2~3칸 그리드에 놓을 수 있는 크기로 유지한다.
  */
 export default function FeedCard({
   trend,
@@ -48,7 +47,7 @@ export default function FeedCard({
   return (
     <article className="overflow-hidden rounded-[28px] border border-[#f1dfd3] bg-white shadow-[0_10px_30px_rgba(139,62,35,0.05)]">
       <Link href={`/trend/${trend.id}`} className="group block">
-        <div className="relative aspect-[4/5] w-full overflow-hidden sm:aspect-[16/10]">
+        <div className="relative aspect-[4/3] w-full overflow-hidden">
           <Image
             src={trend.image}
             alt={trend.title}
@@ -58,7 +57,7 @@ export default function FeedCard({
           />
           <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-black/55 to-transparent" />
 
-          <span className="absolute left-4 top-4 grid h-10 w-10 place-items-center rounded-full bg-[#d81825] font-number text-lg font-bold text-white shadow-sm">
+          <span className="absolute left-4 top-4 grid h-10 w-10 place-items-center rounded-full bg-strawberry font-number text-lg font-bold text-white shadow-sm">
             {trend.rank}
           </span>
           <span className="absolute right-4 top-4 rounded-full bg-black/35 px-3 py-1 text-xs font-semibold text-white backdrop-blur-sm">
@@ -75,10 +74,10 @@ export default function FeedCard({
         </div>
       </Link>
 
-      <div className="flex flex-col gap-3 p-5">
-        <div className="flex items-start justify-between gap-3">
+      <div className="flex flex-col gap-2 p-4">
+        <div className="flex items-start justify-between gap-2">
           <Link href={`/trend/${trend.id}`}>
-            <h3 className="font-heading text-xl text-dark hover:text-strawberry">
+            <h3 className="font-heading text-lg text-dark hover:text-strawberry">
               {trend.title}
             </h3>
           </Link>
@@ -86,20 +85,20 @@ export default function FeedCard({
             aria-label="즐겨찾기"
             onClick={handleBookmarkClick}
             disabled={pending}
-            className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-cream disabled:opacity-60"
+            className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-cream disabled:opacity-60"
           >
             <Image
               src="/generated/icons/bookmark-icon.png"
               alt=""
-              width={16}
-              height={16}
+              width={14}
+              height={14}
               className={`object-contain transition-opacity ${bookmarked ? "opacity-100" : "opacity-40"}`}
             />
           </button>
         </div>
 
         {trend.why.length > 0 && (
-          <p className="text-sm leading-relaxed text-gray-500">
+          <p className="line-clamp-2 text-sm leading-relaxed text-gray-500">
             <span aria-hidden>✅</span> {trend.why[0]}
           </p>
         )}

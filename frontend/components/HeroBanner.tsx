@@ -38,7 +38,7 @@ export default function HeroBanner({ trend }: { trend?: TrendItem }) {
               className="object-cover"
               priority
             />
-            <div className="absolute inset-0 bg-gradient-to-r from-[#c91425]/90 via-[#ec3548]/45 to-transparent" />
+            <div className="absolute inset-0 bg-gradient-to-r from-[#8a3d1f]/90 via-[#c9704f]/45 to-transparent" />
           </div>
 
           <div className="relative flex flex-col gap-3 p-7 sm:pl-10 md:p-11 md:pl-10">

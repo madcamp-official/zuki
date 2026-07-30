@@ -182,7 +182,7 @@ export default function AdminPage() {
           <button
             type="submit"
             disabled={!canSubmit}
-            className="w-full rounded-full bg-strawberry py-3 font-button text-sm font-bold text-white transition-colors hover:bg-rose-500 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400 sm:col-span-2"
+            className="w-full rounded-full bg-strawberry py-3 font-button text-sm font-bold text-white transition-colors hover:opacity-90 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400 sm:col-span-2"
           >
             {submitting ? "AI 이미지 생성 중... (최대 20초)" : "트렌드 등록하고 발행하기"}
           </button>

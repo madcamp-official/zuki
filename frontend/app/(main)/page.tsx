@@ -1,4 +1,3 @@
-import { Fragment } from "react";
 import HeroBanner from "@/components/HeroBanner";
 import CategoryNav from "@/components/CategoryNav";
 import FeedCard from "@/components/FeedCard";
@@ -20,6 +19,8 @@ export default async function Home() {
 
       <CategoryNav />
 
+      <WhyTrending trend={topTrendDetail?.trend} />
+
       <div className="grid gap-6 lg:grid-cols-[1fr_340px] lg:items-start">
         <section className="flex flex-col gap-5">
           <h2 className="flex items-center gap-1.5 font-heading text-2xl text-dark">
@@ -31,12 +32,9 @@ export default async function Home() {
               아직 등록된 트렌드가 없어요
             </p>
           ) : (
-            <div className="flex flex-col gap-5">
-              {feedTrends.map((trend, index) => (
-                <Fragment key={trend.id}>
-                  <FeedCard trend={trend} />
-                  {index === 0 && <WhyTrending trend={topTrendDetail?.trend} />}
-                </Fragment>
+            <div className="grid grid-cols-2 gap-4">
+              {feedTrends.map((trend) => (
+                <FeedCard key={trend.id} trend={trend} />
               ))}
             </div>
           )}

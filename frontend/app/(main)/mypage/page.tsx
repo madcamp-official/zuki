@@ -107,7 +107,7 @@ export default function MyPage() {
         </p>
         <Link
           href="/login"
-          className="rounded-full bg-strawberry px-8 py-4 font-button text-lg font-semibold text-white transition-colors hover:bg-rose-500"
+          className="rounded-full bg-strawberry px-8 py-4 font-button text-lg font-semibold text-white transition-colors hover:opacity-90"
         >
           로그인하러 가기
         </Link>
@@ -159,7 +159,7 @@ export default function MyPage() {
                 className={`rounded-full px-7 py-3.5 text-lg font-semibold transition-colors ${
                   active
                     ? "bg-strawberry text-white"
-                    : "bg-cream text-gray-500 hover:bg-rose-50"
+                    : "bg-cream text-gray-500 hover:bg-orange-50"
                 }`}
               >
                 {category.label}
@@ -217,7 +217,7 @@ export default function MyPage() {
         <button
           onClick={handleSave}
           disabled={saving}
-          className="w-full rounded-full bg-strawberry py-4 font-button text-lg font-bold text-white transition-colors hover:bg-rose-500 disabled:opacity-60"
+          className="w-full rounded-full bg-strawberry py-4 font-button text-lg font-bold text-white transition-colors hover:opacity-90 disabled:opacity-60"
         >
           {saving ? "저장 중..." : "저장하기"}
         </button>

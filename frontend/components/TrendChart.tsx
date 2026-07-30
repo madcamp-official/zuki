@@ -52,15 +52,15 @@ export default function TrendChart({
         <svg viewBox={`0 0 ${WIDTH} ${HEIGHT}`} className="h-[240px] w-full" role="img" aria-label="검색량 추이 그래프">
           <defs>
             <linearGradient id="trendFill" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#ff4d6d" stopOpacity="0.32" />
-              <stop offset="100%" stopColor="#ff4d6d" stopOpacity="0.02" />
+              <stop offset="0%" stopColor="#c9704f" stopOpacity="0.32" />
+              <stop offset="100%" stopColor="#c9704f" stopOpacity="0.02" />
             </linearGradient>
-            <filter id="trendGlow" x="-20%" y="-30%" width="140%" height="160%"><feDropShadow dx="0" dy="5" stdDeviation="5" floodColor="#ff4d6d" floodOpacity=".28" /></filter>
+            <filter id="trendGlow" x="-20%" y="-30%" width="140%" height="160%"><feDropShadow dx="0" dy="5" stdDeviation="5" floodColor="#c9704f" floodOpacity=".28" /></filter>
           </defs>
           {[0.2, 0.5, 0.8].map((mark) => <line key={mark} x1={PADDING.left} x2={WIDTH - PADDING.right} y1={PADDING.top + chartHeight * mark} y2={PADDING.top + chartHeight * mark} stroke="#f6dfd8" strokeDasharray="4 6" />)}
           <path d={areaPath} fill="url(#trendFill)" />
-          <path d={linePath} fill="none" stroke="#ff4d6d" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" filter="url(#trendGlow)" />
-          {points.map((p, i) => <circle key={i} cx={p.x} cy={p.y} r={i === points.length - 1 ? 6 : 3.5} fill="#fff" stroke="#ff4d6d" strokeWidth={i === points.length - 1 ? 4 : 2.5} />)}
+          <path d={linePath} fill="none" stroke="#c9704f" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" filter="url(#trendGlow)" />
+          {points.map((p, i) => <circle key={i} cx={p.x} cy={p.y} r={i === points.length - 1 ? 6 : 3.5} fill="#fff" stroke="#c9704f" strokeWidth={i === points.length - 1 ? 4 : 2.5} />)}
           <g transform={`translate(${points[peakIndex].x - 25} ${Math.max(4, points[peakIndex].y - 28)})`}><rect width="50" height="20" rx="10" fill="#d81928" /><text x="25" y="14" textAnchor="middle" fill="white" fontSize="11" fontWeight="700">PEAK</text></g>
           {labelIndices.map((i) => <text key={i} x={points[i].x} y={HEIGHT - 10} textAnchor="middle" fill="#a4a0a0" fontSize="11">{labels[i] ?? `${i + 1}일`}</text>)}
         </svg>
