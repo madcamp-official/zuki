@@ -15,7 +15,7 @@ export default async function Home() {
 
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-5 px-5 py-7 sm:px-6">
-      <HeroBanner trend={topTrendDetail?.trend} />
+      <HeroBanner trends={feedTrends.slice(0, 4)} />
 
       <CategoryNav />
 

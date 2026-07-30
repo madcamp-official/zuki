@@ -1,9 +1,20 @@
+"use client";
+
+import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import StatusBadge from "./StatusBadge";
 import type { TrendItem } from "@/lib/trends";
 
-export default function HeroBanner({ trend }: { trend?: TrendItem }) {
+export default function HeroBanner({ trends = [] }: { trends?: TrendItem[] }) {
+  const [active, setActive] = useState(0);
+  const slides = trends.slice(0, 4);
+  const trend = slides[active];
+
+  const goTo = (index: number) => {
+    setActive((index + slides.length) % slides.length);
+  };
+
   return (
     <section className="relative">
       <div className="grid gap-7 md:grid-cols-[.88fr_1.32fr]">
@@ -24,6 +35,12 @@ export default function HeroBanner({ trend }: { trend?: TrendItem }) {
               className="flex items-center gap-2 rounded-full bg-strawberry px-6 py-3 font-button text-sm font-semibold text-white shadow-sm transition-transform hover:-translate-y-0.5"
             >
               이번 주 브리핑 보기 <span aria-hidden>→</span>
+            </Link>
+            <Link
+              href="/about"
+              className="rounded-full border border-strawberry/30 bg-white px-6 py-3 font-button text-sm font-semibold text-strawberry transition-transform hover:-translate-y-0.5"
+            >
+              서비스 둘러보기
             </Link>
           </div>
         </div>
@@ -78,7 +95,39 @@ export default function HeroBanner({ trend }: { trend?: TrendItem }) {
         </div>
       </div>
 
-      <div className="absolute -bottom-3 right-[18%] hidden items-center gap-3 text-[#dec1b1] md:flex"><span>←</span><span className="h-3 w-3 rounded-full bg-strawberry" /><span className="h-3 w-3 rounded-full border border-[#d9b6a4]" /><span className="h-3 w-3 rounded-full border border-[#d9b6a4]" /><span>→</span></div>
+      {slides.length > 1 && (
+        <div className="absolute -bottom-3 right-[18%] hidden items-center gap-3 text-[#dec1b1] md:flex">
+          <button
+            type="button"
+            aria-label="이전 트렌드"
+            onClick={() => goTo(active - 1)}
+            className="transition-colors hover:text-strawberry"
+          >
+            ←
+          </button>
+          {slides.map((slide, index) => (
+            <button
+              key={slide.id}
+              type="button"
+              aria-label={`${index + 1}번째 트렌드 보기`}
+              onClick={() => goTo(index)}
+              className={`h-3 w-3 rounded-full transition-colors ${
+                index === active
+                  ? "bg-strawberry"
+                  : "border border-[#d9b6a4] hover:border-strawberry"
+              }`}
+            />
+          ))}
+          <button
+            type="button"
+            aria-label="다음 트렌드"
+            onClick={() => goTo(active + 1)}
+            className="transition-colors hover:text-strawberry"
+          >
+            →
+          </button>
+        </div>
+      )}
 
       <div className="pointer-events-none absolute -bottom-3 left-0 hidden h-20 w-24 md:block">
         <Image src="/generated/icon-strawberry.png" alt="" fill className="object-contain" />
