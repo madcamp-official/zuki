@@ -150,16 +150,33 @@ export async function getTrendDetail(req: Request, res: Response) {
   // 프론트 "검색량 추이" 그래프용 — 네이버 검색지수 원본 시계열.
   // scoreHistory(점수 이력)와는 다른 값이다. 화면 라벨이 "네이버 데이터랩 기준
   // 상대 검색지수(0~100)"이므로 이 배열을 써야 맞다.
+  /*
+   * 날짜를 먼저 만들고 값을 붙인다 (generate_series LEFT JOIN).
+   *
+   * 네이버는 검색량이 0인 날을 응답에서 빼기 때문에, 있는 행만 그리면
+   * 카드마다 그래프 구간이 달라진다 (신상은 30일, 오래된 건 60일).
+   * 증감률이 "최근 28일 대 이전 28일"이라 최소 56일은 보여야 근거가 읽히므로,
+   * 60일을 고정으로 깔고 빠진 날은 0으로 채운다.
+   */
   const searchIndexHistory = await query(
-    `SELECT km.collected_date AS recorded_date, km.value AS search_index
-       FROM keywords k
-       JOIN keyword_metrics km ON km.keyword_id = k.id
-      WHERE k.trend_id = $1
-        AND km.source_type = 'naver'
-        -- 원본 일별 값을 쓴다. search_index는 7일 평균이라 수집 횟수만큼(하루 1개)
-        -- 밖에 없어서 그래프가 그려지지 않는다.
-        AND km.metric_type = 'search_index_daily'
-      ORDER BY km.collected_date ASC`,
+    `WITH span AS (
+       SELECT generate_series(
+         (CURRENT_DATE - INTERVAL '59 days')::date, CURRENT_DATE, '1 day'
+       )::date AS d
+     ),
+     vals AS (
+       SELECT km.collected_date AS d, km.value
+         FROM keywords k
+         JOIN keyword_metrics km ON km.keyword_id = k.id
+        WHERE k.trend_id = $1
+          AND km.source_type = 'naver'
+          -- 원본 일별 값을 쓴다. search_index는 7일 평균이라 수집 횟수만큼(하루 1개)
+          -- 밖에 없어서 그래프가 그려지지 않는다.
+          AND km.metric_type = 'search_index_daily'
+     )
+     SELECT span.d AS recorded_date, COALESCE(vals.value, 0) AS search_index
+       FROM span LEFT JOIN vals ON vals.d = span.d
+      ORDER BY span.d ASC`,
     [id]
   );
 

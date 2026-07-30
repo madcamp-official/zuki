@@ -71,20 +71,52 @@ export function calcNaverSignals(points: NaverTrendPoint[]): {
 } {
   if (points.length === 0) return { level: null, changeRate: null };
 
-  const avg = (arr: NaverTrendPoint[]) =>
-    arr.reduce((s, p) => s + p.ratio, 0) / arr.length;
+  /**
+   * 날짜 기준으로 구간을 자른다 — 배열 인덱스로 자르면 안 된다.
+   *
+   * 네이버는 검색량이 0인 날을 아예 응답에서 빼버린다. 그래서 신상 키워드는
+   * 배열이 듬성듬성하다. 실측: '씬쿠키'는 6/26부터 34일치뿐인데,
+   * slice(-28)/slice(-56,-28)로 자르면 "최근 28일 대 직전 6일"을 비교하게 된다.
+   * 기간이 다른 두 평균을 나눈 값이라 +167% 같은 수치가 나왔다.
+   *
+   * 빠진 날은 0으로 채운다 — 데이터가 없다는 건 그날 검색이 거의 없었다는 뜻이다.
+   */
+  const byDate = new Map(points.map((p) => [p.period, p.ratio]));
+  const lastDate = new Date(points[points.length - 1].period);
 
-  const recent = points.slice(-28);
-  const previous = points.slice(-56, -28);
+  /** 기준일로부터 offset일 전부터 N일간의 평균과 실제 데이터가 있던 날 수 */
+  const windowStats = (offsetDays: number, spanDays: number) => {
+    let sum = 0;
+    let filled = 0;
+    for (let i = 0; i < spanDays; i += 1) {
+      const d = new Date(lastDate);
+      d.setDate(d.getDate() - offsetDays - i);
+      const v = byDate.get(d.toISOString().slice(0, 10));
+      if (v !== undefined) {
+        sum += v;
+        filled += 1;
+      }
+    }
+    return { avg: sum / spanDays, filled };
+  };
 
   // level은 "현재 수준"이므로 최근 7일 평균을 유지한다 (28일이면 너무 과거까지 섞인다)
-  const level = round2(avg(points.slice(-7)));
+  const level = round2(windowStats(0, 7).avg);
 
-  if (previous.length === 0) return { level, changeRate: null };
-  const base = avg(previous);
-  if (base === 0) return { level, changeRate: null };
+  const recent = windowStats(0, 28);
+  const previous = windowStats(28, 28);
 
-  return { level, changeRate: round2(((avg(recent) - base) / base) * 100) };
+  /*
+   * 이전 구간에 실제 데이터가 절반도 없으면 증감률을 내지 않는다.
+   *
+   * 신상 키워드는 이전 28일이 거의 비어 있어 기준값이 0에 가깝고, 그러면
+   * 증감률이 수백~수천 %로 폭발한다. 숫자는 크지만 "예전엔 아무도 안 찾았다"는
+   * 뜻일 뿐이라 트렌드 강도로 쓸 수 없다. 이때는 null을 주고, 확산 단계는
+   * 검색지수(level)만으로 태동기 판정을 받게 둔다.
+   */
+  if (previous.filled < 14 || previous.avg === 0) return { level, changeRate: null };
+
+  return { level, changeRate: round2(((recent.avg - previous.avg) / previous.avg) * 100) };
 }
 
 function round2(n: number): number {
