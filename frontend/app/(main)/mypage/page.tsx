@@ -9,7 +9,6 @@ import {
   fetchMyBookmarks,
   fetchMyProfile,
   updateMyCategoryInterests,
-  updateMyProfile,
   type MyProfile,
 } from "@/lib/api";
 
@@ -18,8 +17,6 @@ export default function MyPage() {
   const [loadingProfile, setLoadingProfile] = useState(true);
 
   const [interests, setInterests] = useState<CategorySlug[]>([]);
-  const [storeName, setStoreName] = useState("");
-  const [notifEnabled, setNotifEnabled] = useState(true);
 
   const [bookmarked, setBookmarked] = useState<TrendItem[]>([]);
   const [loadingBookmarks, setLoadingBookmarks] = useState(true);
@@ -36,8 +33,6 @@ export default function MyPage() {
         setProfile(data);
         if (data) {
           setInterests(data.categoryInterests.map((c) => c.slug));
-          setStoreName(data.storeName ?? "");
-          setNotifEnabled(data.notifEnabled);
         }
       })
       .finally(() => {
@@ -79,13 +74,7 @@ export default function MyPage() {
     setSaving(true);
     setSaveMessage(null);
     try {
-      await Promise.all([
-        updateMyProfile({
-          storeName: storeName.trim() || undefined,
-          notifEnabled,
-        }),
-        updateMyCategoryInterests(interests),
-      ]);
+      await updateMyCategoryInterests(interests);
       setSaveMessage("저장했어요!");
     } catch (err) {
       setSaveMessage(
@@ -101,7 +90,7 @@ export default function MyPage() {
       <div className="mx-auto flex max-w-2xl flex-col items-center gap-5 px-6 py-24 text-center">
         <h1 className="font-heading text-3xl text-dark">마이페이지</h1>
         <p className="text-lg text-gray-500">
-          즐겨찾기, 관심 카테고리, 매장 정보를 관리하려면
+          즐겨찾기와 관심 카테고리를 관리하려면
           <br />
           로그인이 필요해요
         </p>
@@ -120,7 +109,7 @@ export default function MyPage() {
       <div>
         <h1 className="font-heading text-3xl text-dark">마이페이지</h1>
         <p className="mt-2 text-lg text-gray-500">
-          즐겨찾기, 관심 카테고리, 매장 정보를 관리하세요
+          즐겨찾기와 관심 카테고리를 관리하세요
         </p>
       </div>
 
@@ -166,50 +155,6 @@ export default function MyPage() {
               </button>
             );
           })}
-        </div>
-      </section>
-
-      <section className="flex flex-col gap-4">
-        <div>
-          <h2 className="font-heading text-2xl text-dark">매장 이름</h2>
-          <p className="mt-1 text-base text-gray-400">
-            매장 이름을 넣어두면 알림 메시지에 함께 표시돼요
-          </p>
-        </div>
-        <input
-          type="text"
-          value={storeName}
-          onChange={(e) => setStoreName(e.target.value)}
-          placeholder="예: 소보로베이커리 강남점"
-          maxLength={100}
-          className="rounded-2xl border-2 border-[#f0e2d6] bg-white px-5 py-4 text-lg text-dark outline-none focus:border-strawberry"
-        />
-      </section>
-
-      <section className="flex flex-col gap-4">
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <h2 className="font-heading text-2xl text-dark">아침 알림</h2>
-            <p className="mt-1 text-base text-gray-400">
-              매일 아침, 오늘의 트렌드를 알려드려요
-            </p>
-          </div>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={notifEnabled}
-            aria-label="아침 알림 켜기/끄기"
-            onClick={() => setNotifEnabled((prev) => !prev)}
-            className={`relative h-10 w-[4.5rem] shrink-0 rounded-full transition-colors ${
-              notifEnabled ? "bg-strawberry" : "bg-gray-200"
-            }`}
-          >
-            <span
-              className={`absolute top-1 h-8 w-8 rounded-full bg-white shadow-sm transition-transform ${
-                notifEnabled ? "translate-x-9" : "translate-x-1"
-              }`}
-            />
-          </button>
         </div>
       </section>
 
