@@ -164,6 +164,10 @@ export async function fetchTrendById(id: string): Promise<{
     const labels = points
       .filter((_, i) => i % labelStep === 0)
       .map((p) => p.date);
+    // 마지막 날짜는 반드시 보여준다 — 샘플링이 끝점을 건너뛰면
+    // 데이터가 옛날에 끊긴 것처럼 보인다
+    const lastDate = points[points.length - 1]?.date;
+    if (lastDate && labels[labels.length - 1] !== lastDate) labels.push(lastDate);
 
     return {
       trend: toTrendItem(trend, 0),

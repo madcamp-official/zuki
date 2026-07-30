@@ -21,7 +21,11 @@ export default function TrendChart({
     );
   }
 
-  const max = 100;
+  // Y축을 데이터에 맞춰 조정한다. 100으로 고정하면 검색지수가 낮은 키워드
+  // (예: 8 언저리)가 바닥에 깔린 직선처럼 보여서, "+11% 증가" 같은 통계와
+  // 그래프가 서로 안 맞는 것처럼 읽힌다. 실제 변동이 보이게 최대값의 1.3배를
+  // 천장으로 쓰되, 너무 좁아져 노이즈가 산맥처럼 보이지 않게 하한 10을 둔다.
+  const max = Math.max(10, Math.ceil(Math.max(...data) * 1.3));
   const stepX = (WIDTH - PADDING * 2) / (data.length - 1);
   const axisLabels = labels ?? MONTH_LABELS.slice(-data.length);
 
