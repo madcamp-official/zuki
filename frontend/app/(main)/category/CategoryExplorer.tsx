@@ -43,7 +43,7 @@ export default function CategoryExplorer() {
           className={`rounded-full px-5 py-2.5 text-base font-semibold transition-colors ${
             active === ALL_TAB
               ? "bg-strawberry text-white"
-              : "bg-white text-gray-500 hover:bg-rose-50"
+              : "bg-white text-gray-500 hover:bg-orange-50"
           }`}
         >
           전체
@@ -55,7 +55,7 @@ export default function CategoryExplorer() {
             className={`flex items-center gap-2 rounded-full px-5 py-2.5 text-base font-semibold transition-colors ${
               active === category.slug
                 ? "bg-strawberry text-white"
-                : "bg-white text-gray-500 hover:bg-rose-50"
+                : "bg-white text-gray-500 hover:bg-orange-50"
             }`}
           >
             {category.label}

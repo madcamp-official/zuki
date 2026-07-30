@@ -47,7 +47,7 @@ export default async function TrendDetailPage({
         <div className="flex flex-col justify-center gap-4">
           <div className="flex items-center gap-2">
             <StatusBadge status={trend.status} />
-            <span className="rounded-full bg-rose-50 px-3 py-1 text-xs font-semibold text-strawberry">
+            <span className="rounded-full bg-orange-50 px-3 py-1 text-xs font-semibold text-strawberry">
               {CATEGORY_LABELS[trend.category]}
             </span>
           </div>
@@ -71,11 +71,10 @@ export default async function TrendDetailPage({
         </div>
       </div>
 
-      <section className="rounded-2xl bg-white p-6 shadow-sm">
-        <h2 className="font-heading text-xl text-dark">검색량 추이</h2>
-        <p className="mt-1 text-xs text-gray-400">
-          네이버 데이터랩 기준 상대 검색지수 (0~100)
-        </p>
+      <section className="rounded-[28px] border border-[#f1dfd3] bg-white p-6 shadow-[0_14px_34px_rgba(139,62,35,.05)]">
+        <div className="flex flex-wrap items-end justify-between gap-3"><div><h2 className="font-heading text-2xl text-dark">검색량 추이 <span aria-hidden>📈</span></h2>
+        <p className="mt-1 text-xs text-gray-400">네이버 데이터랩 기준 상대 검색지수 · 최근 변동 폭을 확대해 보여드려요</p></div>
+        <span className="rounded-full bg-[#fff2f3] px-3 py-1.5 text-xs font-bold text-strawberry">트렌드 모멘텀 분석</span></div>
         <div className="mt-4">
           {/* scoreHistory(점수 이력)가 아니라 일별 검색지수를 쓴다 —
               화면 라벨이 "네이버 데이터랩 기준 상대 검색지수(0~100)"이므로 이 값이 맞다 */}

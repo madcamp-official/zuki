@@ -43,7 +43,7 @@ export default function SignupPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-b from-rose-50 via-cream to-cream px-6 py-12">
+    <div className="flex min-h-screen items-center justify-center bg-gradient-to-b from-orange-50 via-cream to-cream px-6 py-12">
       <div className="w-full max-w-sm rounded-3xl bg-white p-8 shadow-lg">
         <div className="mb-8 flex flex-col items-center gap-2 text-center">
           <Link href="/" className="font-heading text-2xl text-strawberry">
@@ -70,7 +70,7 @@ export default function SignupPage() {
         </div>
 
         {done ? (
-          <p className="rounded-xl bg-rose-50 px-4 py-3 text-center text-sm text-strawberry">
+          <p className="rounded-xl bg-orange-50 px-4 py-3 text-center text-sm text-strawberry">
             가입 확인 메일을 보냈어요. 메일함을 확인해주세요!
           </p>
         ) : (
@@ -104,7 +104,7 @@ export default function SignupPage() {
             <button
               type="submit"
               disabled={submitting}
-              className="mt-1 w-full rounded-full bg-strawberry py-3 font-button text-sm font-semibold text-white transition-colors hover:bg-rose-500 disabled:opacity-60"
+              className="mt-1 w-full rounded-full bg-strawberry py-3 font-button text-sm font-semibold text-white transition-colors hover:opacity-90 disabled:opacity-60"
             >
               {submitting ? "가입 중..." : "이메일로 회원가입"}
             </button>

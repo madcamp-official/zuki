@@ -44,7 +44,7 @@ export default async function RankingPage() {
                     <h2 className="truncate text-sm font-bold text-dark">
                       {trend.title}
                     </h2>
-                    <span className="shrink-0 rounded-full bg-rose-50 px-2 py-0.5 text-[11px] font-semibold text-strawberry">
+                    <span className="shrink-0 rounded-full bg-orange-50 px-2 py-0.5 text-[11px] font-semibold text-strawberry">
                       {CATEGORY_LABELS[trend.category]}
                     </span>
                   </div>

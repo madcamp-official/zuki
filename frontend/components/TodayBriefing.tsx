@@ -22,7 +22,7 @@ export default function TodayBriefing({ trends }: { trends: TrendItem[] }) {
               className="flex flex-col items-center gap-1 rounded-xl p-1 text-center transition-colors hover:bg-cream"
             >
               <Link href={`/trend/${item.id}`} className="flex flex-col items-center gap-1">
-                <span className="relative grid h-14 w-14 shrink-0 place-items-center overflow-hidden rounded-full border border-[#f5e6dc] bg-rose-50">
+                <span className="relative grid h-14 w-14 shrink-0 place-items-center overflow-hidden rounded-full border border-[#f5e6dc] bg-orange-50">
                   <Image
                     src={item.image}
                     alt={item.title}

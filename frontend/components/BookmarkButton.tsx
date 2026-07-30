@@ -38,7 +38,7 @@ export default function BookmarkButton({
     <button
       onClick={handleClick}
       disabled={pending}
-      className="flex w-fit items-center gap-2 rounded-full bg-strawberry px-5 py-2.5 font-button text-sm font-semibold text-white transition-colors hover:bg-rose-500 disabled:opacity-60"
+      className="flex w-fit items-center gap-2 rounded-full bg-strawberry px-5 py-2.5 font-button text-sm font-semibold text-white transition-colors hover:opacity-90 disabled:opacity-60"
     >
       <Image
         src="/generated/icons/bookmark-icon.png"

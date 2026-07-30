@@ -39,9 +39,93 @@ const MARKETING_SUBJECT: Record<string, string> = {
     'A neatly arranged set of seasonal cafe merchandise: a tumbler and a tote bag',
   '레터링 케이크':
     'An elegant lettering cake (a round cake with delicate icing decoration, no readable text)',
+  '포토존':
+    'A charming cafe photo zone corner: a decorated wall backdrop with fairy lights and pastel balloons, a small stool and a floral arrangement, no people',
 };
 
 const MENU_PROMPT: Record<string, string> = {
+  // 실제 메뉴의 외형을 명시한다. 이름만 전달하면 모델이 신조어/지역명 메뉴를
+  // 일반 크루아상이나 라테로 오해하는 문제가 있어 카드 이미지마다 구체화했다.
+  '왁뿌소금빵':
+    'Korean salt bread (sogeumbbang): one small oval, plump laminated bread roll with a distinctly flat rounded-rectangle silhouette, golden butter-brown crust, visible flaky layers along its side, a few coarse sea-salt crystals on top. It is NOT a croissant: no crescent shape, no pointed tips, no twisted spiral layers',
+  '씬쿠키':
+    'A single ultra-thin, wide, crisp chocolate chip cookie with lacy caramelized edges and melted chocolate chunks',
+  '샌드베이글':
+    'A freshly cut sesame bagel sandwich stacked with cream cheese, smoked salmon, arugula, tomato, and thin red onion',
+  '황치즈칩쿠키':
+    'A thick golden-yellow cheddar cheese chip cookie, craggy crisp edge, visible melted cheese pieces, one cookie only',
+  '와그작케이크':
+    'A playful crunchy crumble cake slice, soft cream layers coated in chunky cookie crumbs and crisp cereal pieces',
+  '사라다빵':
+    'Classic Korean salad bread: a soft oblong milk-bread roll split open and generously filled with creamy potato salad, shredded cabbage, carrot and corn',
+  '크로플':
+    'A golden croffle: a croissant pressed in a waffle iron, square grid pattern with flaky pastry layers, topped with a small pat of butter',
+  '무화과 타르트':
+    'An elegant fig tart with a crisp butter pastry shell, vanilla custard, and fresh quartered purple figs',
+  '텐라떼':
+    'A clear glass of iced ten latte, espresso and pale milk visibly layered, lots of ice, soft cream foam',
+  '글레이즈드라떼':
+    'A clear iced latte with glossy vanilla glaze drizzled on the inside of the glass and a light whipped cream cap',
+  '우유빙수':
+    'Korean milk bingsu: a snowy mound of finely shaved milk ice in a ceramic bowl, topped with condensed milk and a small scoop of vanilla ice cream',
+  '신상아이스크림':
+    'A premium new-release soft serve ice cream swirl in a small pastel cup, colorful fruit garnish',
+  '쌀케이크':
+    'A Korean rice cake dessert: neat soft white rice-cake layers with a subtle pale cream filling and a small strawberry garnish',
+  '찰떡파이':
+    'A Korean chaltteok pie: round chocolate-coated cake with a chewy white mochi center visibly cut open',
+  '단팥빵':
+    'A round glossy Korean sweet red-bean bun, split open to reveal dense dark-red adzuki bean paste',
+  '땅콩빵':
+    'Korean peanut bread: a small peanut-shell-shaped golden cake, cut open to show creamy peanut filling',
+  '참붕어빵':
+    'Korean fish-shaped taiyaki pastry, golden crisp fish silhouette, one piece with red bean filling slightly visible',
+  '쫀득빵':
+    'A soft chewy Korean bread roll, glossy golden surface, torn open to show a stretchy dense mochi-like interior',
+  '120겹파이':
+    'A dramatic mille-feuille made of many extremely thin, crisp golden pastry layers with light cream between them, cut as a neat rectangular slice',
+  '초코파이':
+    'A classic Korean choco pie: a round soft cake sandwich with marshmallow filling, fully coated in glossy dark chocolate, one bite taken to reveal the white marshmallow inside',
+  '아이스티':
+    'A tall glass of iced black tea, deep amber-red color, lots of ice cubes, a lemon slice on the rim, condensation on the glass',
+  '크리미라떼':
+    'An iced latte in a clear glass with an extra-thick layer of silky creamy milk foam on top, smooth espresso visible beneath',
+  '밀크티':
+    'A cup of milky Taiwanese-style milk tea, pale caramel-brown color, in a clear cup with visible tea swirl, no tapioca pearls',
+  '건강빵':
+    'A rustic multigrain health bread loaf, dense dark crust covered in visible oats, seeds and grains, sliced to show a hearty grainy crumb',
+  '감자빵':
+    'A round Korean potato bread: a soft pale bun shaped and dusted like a real potato with cocoa powder speckles, split open to reveal creamy potato-cheese filling',
+  '말차':
+    'A bowl of whisked Japanese matcha, vivid vibrant green frothy surface, traditional ceramic tea bowl, bamboo whisk resting beside it',
+  '녹차':
+    'A cup of brewed Korean green tea, clear pale-green liquid, simple white ceramic cup, a few loose tea leaves visible',
+  '아메리카노':
+    'A cup of iced americano, dark rich coffee over clear ice cubes in a tall glass, condensation on the glass, minimal styling',
+  '에그타르트':
+    'A classic Portuguese-style egg tart: flaky golden pastry shell filled with smooth custard, caramelized dark spots on top, one tart as the main subject',
+  '홍차':
+    'A cup of brewed black tea, deep reddish-amber color, elegant white teacup and saucer, a lemon wedge on the side',
+  '초코쿠키':
+    'A thick chewy double chocolate cookie, cracked glossy top, melted dark chocolate chunks visible, one cookie only',
+  '두바이초콜릿':
+    'Dubai chocolate bar, thick chocolate shell cut open to reveal bright green pistachio cream filling with crispy shredded kataifi pastry strands',
+  '애플파이':
+    'A classic American apple pie slice, golden lattice or crimped crust, cinnamon-spiced apple filling visible, warm and glossy',
+  '버블티':
+    'A cup of milk tea bubble tea with a thick layer of black tapioca pearls visible at the bottom through a clear plastic cup, wide straw',
+  '미트파이':
+    'A savory meat pie with a golden flaky crust, cut open to reveal a rich meat and gravy filling',
+  '생크림빵':
+    'A soft Korean cream bun: a plain milk bread roll split open and generously filled with plain whipped fresh cream, no fruit, dusted lightly with powdered sugar',
+  '흑임자 크림라떼':
+    'An iced black sesame cream latte in a clear glass, pale grey-purple color, thick whipped black sesame cream on top with a sprinkle of black sesame seeds',
+  '바닐라라떼':
+    'An iced vanilla latte in a clear glass, creamy pale coffee color, light vanilla bean flecks visible, condensation on the glass',
+  '요거트 아이스크림':
+    'A swirl of tangy soft-serve yogurt ice cream in a cup, pale creamy white color, topped with a few fresh berries',
+  '떡케이크':
+    'A Korean rice cake (tteok) styled as a layered celebration cake, soft white rice-cake tiers with pastel cream between layers, small fruit garnish on top',
   '딸기 크림 브리오슈':
     'Strawberry cream brioche toast stacked high with fresh strawberries, thick whipped cream overflowing, glossy strawberry syrup dripping down, powdered sugar',
   '말차 생크림 롤케이크':
@@ -146,7 +230,13 @@ function getClient(): OpenAI {
     if (!apiKey) {
       throw new Error('OPENAI_API_KEY가 설정되지 않았습니다.');
     }
-    client = new OpenAI({ apiKey });
+    client = new OpenAI({
+      apiKey,
+      // 자동 생성은 수십 개를 순서대로 처리한다. 한 요청이 무한 대기하면
+      // 이후 카드 전부가 기본 이미지로 남기 때문에 항목 단위로 실패 처리한다.
+      timeout: Number(process.env.OPENAI_IMAGE_TIMEOUT_MS ?? 120_000),
+      maxRetries: 2,
+    });
   }
   return client;
 }

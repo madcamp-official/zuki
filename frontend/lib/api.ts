@@ -48,6 +48,19 @@ interface RawSearchIndexPoint {
   recorded_date: string;
 }
 
+/**
+ * 백엔드 reason은 "문장1. 문장2. 문장3." 형태의 한 문단이라 그대로 두면
+ * 불릿 하나에 다 뭉쳐 보인다. 문장 단위로 나눠 각각 불릿으로 보여준다.
+ * "117.6%" 같은 소수점은 문장 끝이 아니므로 끊지 않도록 뒤에 공백+대문자/한글이
+ * 오는 마침표만 구분자로 삼는다.
+ */
+function splitReasonIntoSentences(reason: string): string[] {
+  return reason
+    .split(/\.\s+(?=[^\d])|\.\s*$/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
 function toTrendItem(raw: RawTrend, index: number): TrendItem {
   const score = Math.round(Number(raw.score));
 
@@ -63,7 +76,7 @@ function toTrendItem(raw: RawTrend, index: number): TrendItem {
     // 백엔드에 아직 언급량 지표가 없어 검색량 기반으로 임시 표시
     mentionGrowth: score,
     regionScope: raw.region_scope,
-    why: raw.reason ? raw.reason.split("\n").filter(Boolean) : [],
+    why: raw.reason ? splitReasonIntoSentences(raw.reason) : [],
     searchTrend: [],
   };
 }
@@ -155,11 +168,12 @@ export async function fetchTrendById(id: string): Promise<{
       searchIndexHistory: RawSearchIndexPoint[];
     }>(`/api/trends/${id}`);
 
-    // 60일치 일별 값. 라벨은 다 붙이면 겹치므로 5~6개만 균등하게 뽑는다
+    // 차트 컴포넌트가 균등한 5개 지점을 골라 표시하므로 모든 날짜를 전달한다.
     const points = (searchIndexHistory ?? []).map((p) => ({
       value: Math.round(Number(p.search_index)),
       date: String(p.recorded_date).slice(5, 10).replace("-", "/"), // 'MM/DD'
     }));
+<<<<<<< HEAD
     const labelStep = Math.max(1, Math.ceil(points.length / 6));
     const labels = points
       .filter((_, i) => i % labelStep === 0)
@@ -168,11 +182,13 @@ export async function fetchTrendById(id: string): Promise<{
     // 데이터가 옛날에 끊긴 것처럼 보인다
     const lastDate = points[points.length - 1]?.date;
     if (lastDate && labels[labels.length - 1] !== lastDate) labels.push(lastDate);
+=======
+>>>>>>> def8e124c43dc01fe1eb074a804854d37747ac02
 
     return {
       trend: toTrendItem(trend, 0),
       scoreHistory: scoreHistory.map((point) => Math.round(Number(point.score))),
-      searchHistory: { values: points.map((p) => p.value), labels },
+      searchHistory: { values: points.map((p) => p.value), labels: points.map((p) => p.date) },
     };
   } catch {
     return null;
