@@ -93,7 +93,9 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error(body.error ?? `API 요청 실패: ${res.status}`);
+    // 상태 코드를 메시지에 남긴다 — 호출부가 401(인증 만료)과
+    // 그 외 실패(네트워크·서버 오류)를 구분해야 하기 때문
+    throw new Error(`${res.status} ${body.message ?? body.error ?? "API 요청 실패"}`);
   }
 
   if (res.status === 204) {

@@ -63,8 +63,17 @@ async function verifyToken(token: string): Promise<{ id: string; email: string |
     const id = typeof payload.sub === 'string' ? payload.sub : null;
     if (!id) return null;
 
-    const email = typeof payload.email === 'string' ? payload.email : null;
-    return { id, email };
+    /*
+     * 빈 문자열은 null로 바꾼다.
+     *
+     * 카카오는 이메일 제공에 동의하지 않으면 토큰에 email을 ''로 넣어 보낸다.
+     * public.users.email에는 UNIQUE 제약이 있는데, NULL은 여러 행이 가질 수
+     * 있지만 ''는 하나뿐이다. 그대로 두면 이메일 없는 두 번째 사용자가
+     * 로그인하는 순간 프로필 생성이 UNIQUE 위반으로 터지고, 인증이 필요한
+     * 모든 요청이 500이 된다.
+     */
+    const rawEmail = typeof payload.email === 'string' ? payload.email.trim() : '';
+    return { id, email: rawEmail || null };
   } catch {
     // 만료·위조·형식 오류 모두 인증 실패로 처리 (사유를 노출하지 않는다)
     return null;
@@ -81,14 +90,36 @@ async function verifyToken(token: string): Promise<{ id: string; email: string |
  * 가입 경로(이메일/카카오/관리자 생성)에 상관없이 동작한다.
  */
 async function ensureProfile(id: string, email: string | null): Promise<string> {
-  const rows = await query<{ role: string }>(
-    `INSERT INTO users (id, email) VALUES ($1, $2)
-     ON CONFLICT (id) DO UPDATE SET email = COALESCE(EXCLUDED.email, users.email)
-     RETURNING role`,
-    [id, email]
-  );
-  // 스키마상 기본 역할은 'owner'(사장님). editor/admin은 수동 부여한다.
-  return rows[0]?.role ?? 'owner';
+  try {
+    const rows = await query<{ role: string }>(
+      `INSERT INTO users (id, email) VALUES ($1, $2)
+       ON CONFLICT (id) DO UPDATE SET email = COALESCE(EXCLUDED.email, users.email)
+       RETURNING role`,
+      [id, email]
+    );
+    // 스키마상 기본 역할은 'owner'(사장님). editor/admin은 수동 부여한다.
+    return rows[0]?.role ?? 'owner';
+  } catch (err) {
+    /*
+     * email UNIQUE 충돌은 프로필 생성을 막을 이유가 안 된다.
+     *
+     * 같은 이메일이 이미 다른 행에 있는 경우(소셜 계정을 새로 만들었거나
+     * 데이터가 꼬였을 때) 여기서 터지면 인증이 필요한 모든 요청이 500이 된다.
+     * 이메일은 auth.users가 진짜 출처이고 public.users의 값은 표시용 사본일
+     * 뿐이므로, 충돌하면 이메일 없이 프로필만 만들고 넘어간다.
+     */
+    const message = err instanceof Error ? err.message : String(err);
+    if (!/duplicate key|unique/i.test(message)) throw err;
+
+    console.warn(`[auth] 이메일 중복으로 프로필을 이메일 없이 생성합니다 (id=${id})`);
+    const rows = await query<{ role: string }>(
+      `INSERT INTO users (id) VALUES ($1)
+       ON CONFLICT (id) DO UPDATE SET id = users.id
+       RETURNING role`,
+      [id]
+    );
+    return rows[0]?.role ?? 'owner';
+  }
 }
 
 /**
