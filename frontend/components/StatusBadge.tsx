@@ -2,7 +2,7 @@ export type TrendStatus = "태동기" | "상승기" | "전성기" | "하락기";
 
 const STATUS_STYLE: Record<TrendStatus, string> = {
   태동기: "bg-blue-50 text-blue-500",
-  상승기: "bg-rose-100 text-strawberry",
+  상승기: "bg-orange-100 text-strawberry",
   전성기: "bg-yellow-100 text-amber-700",
   하락기: "bg-gray-100 text-gray-500",
 };

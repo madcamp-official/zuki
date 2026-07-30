@@ -9,17 +9,40 @@ import {
   fetchMyBookmarks,
   fetchMyProfile,
   updateMyCategoryInterests,
-  updateMyProfile,
   type MyProfile,
 } from "@/lib/api";
+
+/** 즐겨찾기한 트렌드들의 검색량 증감을 한눈에 보여주는 요약 배지 */
+function BookmarkSummary({ trends }: { trends: TrendItem[] }) {
+  const rising = trends.filter((t) => t.searchGrowth > 0);
+  const declining = trends.filter((t) => t.searchGrowth < 0);
+  const topRising = rising.reduce<TrendItem | null>(
+    (best, t) => (!best || t.searchGrowth > best.searchGrowth ? t : best),
+    null,
+  );
+
+  return (
+    <div className="flex flex-wrap gap-3 rounded-2xl border border-[#f1dfd3] bg-white p-4 text-base">
+      <span className="rounded-full bg-orange-50 px-4 py-2 font-semibold text-strawberry">
+        📈 상승 중 {rising.length}개
+      </span>
+      <span className="rounded-full bg-gray-100 px-4 py-2 font-semibold text-gray-500">
+        📉 하락 중 {declining.length}개
+      </span>
+      {topRising && (
+        <span className="rounded-full bg-cream px-4 py-2 font-semibold text-dark">
+          🔥 {topRising.title} +{topRising.searchGrowth}%로 가장 급상승
+        </span>
+      )}
+    </div>
+  );
+}
 
 export default function MyPage() {
   const [profile, setProfile] = useState<MyProfile | null>(null);
   const [loadingProfile, setLoadingProfile] = useState(true);
 
   const [interests, setInterests] = useState<CategorySlug[]>([]);
-  const [storeName, setStoreName] = useState("");
-  const [notifEnabled, setNotifEnabled] = useState(true);
 
   const [bookmarked, setBookmarked] = useState<TrendItem[]>([]);
   const [loadingBookmarks, setLoadingBookmarks] = useState(true);
@@ -36,8 +59,6 @@ export default function MyPage() {
         setProfile(data);
         if (data) {
           setInterests(data.categoryInterests.map((c) => c.slug));
-          setStoreName(data.storeName ?? "");
-          setNotifEnabled(data.notifEnabled);
         }
       })
       .finally(() => {
@@ -79,13 +100,7 @@ export default function MyPage() {
     setSaving(true);
     setSaveMessage(null);
     try {
-      await Promise.all([
-        updateMyProfile({
-          storeName: storeName.trim() || undefined,
-          notifEnabled,
-        }),
-        updateMyCategoryInterests(interests),
-      ]);
+      await updateMyCategoryInterests(interests);
       setSaveMessage("저장했어요!");
     } catch (err) {
       setSaveMessage(
@@ -98,14 +113,16 @@ export default function MyPage() {
 
   if (!loadingProfile && !profile) {
     return (
-      <div className="mx-auto flex max-w-3xl flex-col items-center gap-4 px-6 py-20 text-center">
+      <div className="mx-auto flex max-w-2xl flex-col items-center gap-5 px-6 py-24 text-center">
         <h1 className="font-heading text-3xl text-dark">마이페이지</h1>
-        <p className="text-base text-gray-500">
-          즐겨찾기, 관심 카테고리, 매장 정보를 관리하려면 로그인이 필요해요
+        <p className="text-lg text-gray-500">
+          즐겨찾기와 관심 카테고리를 관리하려면
+          <br />
+          로그인이 필요해요
         </p>
         <Link
           href="/login"
-          className="rounded-full bg-strawberry px-6 py-3 font-button text-base font-semibold text-white transition-colors hover:bg-rose-500"
+          className="rounded-full bg-strawberry px-8 py-4 font-button text-lg font-semibold text-white transition-colors hover:opacity-90"
         >
           로그인하러 가기
         </Link>
@@ -114,52 +131,42 @@ export default function MyPage() {
   }
 
   return (
-    <div className="mx-auto flex max-w-5xl flex-col gap-7 px-6 py-9">
+    <div className="mx-auto flex max-w-2xl flex-col gap-10 px-6 py-10">
       <div>
-        <h1 className="font-heading text-4xl text-dark">내 매장 대시보드</h1>
+        <h1 className="font-heading text-3xl text-dark">마이페이지</h1>
         <p className="mt-2 text-lg text-gray-500">
-          {storeName ? `${storeName} 사장님, 오늘도 매장 트렌드를 확인해 보세요.` : "매장에 딱 맞는 트렌드를 한눈에 관리하세요."}
+          즐겨찾기와 관심 카테고리를 관리하세요
         </p>
       </div>
 
-      <section className="grid gap-4 sm:grid-cols-3">
-        <div className="rounded-[24px] bg-gradient-to-br from-[#ff4d6d] to-[#e72c42] p-5 text-white shadow-sm"><p className="text-sm font-semibold text-white/80">오늘의 관심 트렌드</p><p className="mt-2 text-3xl font-extrabold">{bookmarked.length}개</p><p className="mt-2 text-sm text-white/90">저장한 메뉴를 바로 확인하세요</p></div>
-        <div className="rounded-[24px] border border-[#f1dfd3] bg-white p-5"><p className="text-sm font-semibold text-gray-400">알림 브리핑</p><p className="mt-2 text-2xl font-extrabold text-dark">{notifEnabled ? "켜짐" : "꺼짐"}</p><p className="mt-2 text-sm text-gray-500">매일 아침 새 트렌드를 받아요</p></div>
-        <div className="rounded-[24px] border border-[#f1dfd3] bg-white p-5"><p className="text-sm font-semibold text-gray-400">관심 분야</p><p className="mt-2 text-2xl font-extrabold text-dark">{interests.length}개</p><p className="mt-2 text-sm text-gray-500">맞춤형 트렌드를 우선 추천해요</p></div>
-      </section>
-
-      <section className="rounded-[24px] border border-[#f1dfd3] bg-white p-5">
-        <div className="mb-4 flex items-center justify-between"><div><h2 className="font-heading text-2xl text-dark">사장님 빠른 메뉴</h2><p className="mt-1 text-sm text-gray-400">자주 쓰는 기능을 바로 실행하세요</p></div><span className="text-2xl">✨</span></div>
-        <div className="grid gap-3 sm:grid-cols-3">
-          <Link href="/ranking" className="rounded-2xl bg-[#fff3f4] p-4 transition-transform hover:-translate-y-0.5"><span className="text-2xl">🔥</span><p className="mt-2 font-bold text-dark">오늘의 급상승 메뉴</p><p className="mt-1 text-sm text-gray-500">지금 뜨는 메뉴 확인</p></Link>
-          <Link href="/category" className="rounded-2xl bg-[#fff8e9] p-4 transition-transform hover:-translate-y-0.5"><span className="text-2xl">🧁</span><p className="mt-2 font-bold text-dark">메뉴 아이디어 찾기</p><p className="mt-1 text-sm text-gray-500">카테고리별 트렌드 탐색</p></Link>
-          <button type="button" onClick={() => setNotifEnabled((prev) => !prev)} className="rounded-2xl bg-[#f4f0ff] p-4 text-left transition-transform hover:-translate-y-0.5"><span className="text-2xl">🔔</span><p className="mt-2 font-bold text-dark">브리핑 알림 {notifEnabled ? "끄기" : "켜기"}</p><p className="mt-1 text-sm text-gray-500">매일 아침 맞춤 알림</p></button>
-        </div>
-      </section>
-
-      <section className="rounded-[24px] border border-[#f1dfd3] bg-white p-6 shadow-sm">
+      <section className="flex flex-col gap-4">
         <h2 className="font-heading text-2xl text-dark">즐겨찾기</h2>
         {loadingBookmarks ? (
-          <p className="mt-4 text-base text-gray-400">불러오는 중이에요...</p>
+          <p className="text-lg text-gray-400">불러오는 중이에요...</p>
         ) : bookmarked.length === 0 ? (
-          <p className="mt-4 text-base text-gray-400">
+          <p className="text-lg text-gray-400">
             아직 즐겨찾기한 트렌드가 없어요
           </p>
         ) : (
-          <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3">
-            {bookmarked.map((trend) => (
-              <TrendCard key={trend.id} trend={trend} initialBookmarked />
-            ))}
-          </div>
+          <>
+            <BookmarkSummary trends={bookmarked} />
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+              {bookmarked.map((trend) => (
+                <TrendCard key={trend.id} trend={trend} initialBookmarked />
+              ))}
+            </div>
+          </>
         )}
       </section>
 
-      <section className="flex flex-col gap-3 rounded-2xl bg-white p-6 shadow-sm">
-        <h2 className="font-heading text-2xl text-dark">관심 카테고리</h2>
-        <p className="-mt-1 text-sm text-gray-400">
-          관심 카테고리를 등록하면 홈 브리핑에 우선 반영돼요
-        </p>
-        <div className="flex flex-wrap gap-2 pt-1">
+      <section className="flex flex-col gap-4">
+        <div>
+          <h2 className="font-heading text-2xl text-dark">관심 카테고리</h2>
+          <p className="mt-1 text-base text-gray-400">
+            선택한 카테고리를 홈 화면에서 먼저 보여드려요
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-3">
           {CATEGORIES.map((category) => {
             const active = interests.includes(category.slug as CategorySlug);
             return (
@@ -167,10 +174,10 @@ export default function MyPage() {
                 key={category.slug}
                 type="button"
                 onClick={() => toggleInterest(category.slug as CategorySlug)}
-                className={`rounded-full px-5 py-2.5 text-base font-semibold transition-colors ${
+                className={`rounded-full px-7 py-3.5 text-lg font-semibold transition-colors ${
                   active
                     ? "bg-strawberry text-white"
-                    : "bg-cream text-gray-500 hover:bg-rose-50"
+                    : "bg-cream text-gray-500 hover:bg-orange-50"
                 }`}
               >
                 {category.label}
@@ -180,57 +187,16 @@ export default function MyPage() {
         </div>
       </section>
 
-      <section className="flex flex-col gap-3 rounded-2xl bg-white p-6 shadow-sm">
-        <h2 className="font-heading text-2xl text-dark">매장 정보</h2>
-        <p className="-mt-1 text-sm text-gray-400">
-          매장명을 등록하면 브리핑 메시지에 반영돼요
-        </p>
-        <input
-          type="text"
-          value={storeName}
-          onChange={(e) => setStoreName(e.target.value)}
-          placeholder="예: 소보로베이커리 강남점"
-          maxLength={100}
-          className="rounded-xl border border-[#f0e2d6] bg-cream px-4 py-3 text-base text-dark outline-none focus:border-strawberry"
-        />
-      </section>
-
-      <section className="flex flex-col gap-3 rounded-2xl bg-white p-6 shadow-sm">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="font-heading text-2xl text-dark">알림 설정</h2>
-            <p className="mt-1 text-sm text-gray-400">
-              매일 아침, 오늘의 트렌드 브리핑을 알려드려요
-            </p>
-          </div>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={notifEnabled}
-            onClick={() => setNotifEnabled((prev) => !prev)}
-            className={`relative h-8 w-14 shrink-0 rounded-full transition-colors ${
-              notifEnabled ? "bg-strawberry" : "bg-gray-200"
-            }`}
-          >
-            <span
-              className={`absolute top-1 h-6 w-6 rounded-full bg-white shadow-sm transition-transform ${
-                notifEnabled ? "translate-x-7" : "translate-x-1"
-              }`}
-            />
-          </button>
-        </div>
-      </section>
-
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-3">
         <button
           onClick={handleSave}
           disabled={saving}
-          className="w-full rounded-full bg-strawberry py-3.5 font-button text-base font-bold text-white transition-colors hover:bg-rose-500 disabled:opacity-60"
+          className="w-full rounded-full bg-strawberry py-4 font-button text-lg font-bold text-white transition-colors hover:opacity-90 disabled:opacity-60"
         >
           {saving ? "저장 중..." : "저장하기"}
         </button>
         {saveMessage && (
-          <p className="text-center text-sm text-gray-500">{saveMessage}</p>
+          <p className="text-center text-base text-gray-500">{saveMessage}</p>
         )}
       </div>
     </div>

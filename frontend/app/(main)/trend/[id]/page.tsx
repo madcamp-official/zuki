@@ -47,7 +47,7 @@ export default async function TrendDetailPage({
         <div className="flex flex-col justify-center gap-4">
           <div className="flex items-center gap-2">
             <StatusBadge status={trend.status} />
-            <span className="rounded-full bg-rose-50 px-3 py-1 text-xs font-semibold text-strawberry">
+            <span className="rounded-full bg-orange-50 px-3 py-1 text-xs font-semibold text-strawberry">
               {CATEGORY_LABELS[trend.category]}
             </span>
           </div>

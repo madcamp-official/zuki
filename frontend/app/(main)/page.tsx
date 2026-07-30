@@ -1,64 +1,48 @@
 import HeroBanner from "@/components/HeroBanner";
 import CategoryNav from "@/components/CategoryNav";
-import TrendCard from "@/components/TrendCard";
+import FeedCard from "@/components/FeedCard";
 import RankingList from "@/components/RankingList";
 import WhyTrending from "@/components/WhyTrending";
-import TodayBriefing from "@/components/TodayBriefing";
 import NewsletterCta from "@/components/NewsletterCta";
 import { fetchTrendById, fetchTrends } from "@/lib/api";
 
 export default async function Home() {
   const trends = await fetchTrends({ limit: 10 });
-  const hotTrends = trends.slice(0, 4);
-  const topTrendDetail = hotTrends[0]
-    ? await fetchTrendById(hotTrends[0].id)
+  const feedTrends = trends.slice(0, 6);
+  const topTrendDetail = feedTrends[0]
+    ? await fetchTrendById(feedTrends[0].id)
     : null;
 
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-5 px-5 py-7 sm:px-6">
-      <HeroBanner trend={topTrendDetail?.trend} />
+      <HeroBanner trends={feedTrends.slice(0, 4)} />
 
       <CategoryNav />
 
-      <section className="rounded-[28px] border border-[#f1dfd3] bg-[#fffdf9] p-5 shadow-[0_10px_30px_rgba(139,62,35,0.035)] sm:p-6">
-        <div className="mb-4 flex items-center justify-between">
+      <WhyTrending trend={topTrendDetail?.trend} />
+
+      <div className="grid gap-6 lg:grid-cols-[1fr_340px] lg:items-start">
+        <section className="flex flex-col gap-5">
           <h2 className="flex items-center gap-1.5 font-heading text-2xl text-dark">
             이번 주 HOT 트렌드 <span aria-hidden>🔥</span>
           </h2>
-          <div className="flex gap-2">
-            <button
-              aria-label="이전 트렌드"
-              className="grid h-9 w-9 place-items-center rounded-full border border-[#f4e3d7] bg-white text-gray-400 shadow-sm transition-colors hover:text-strawberry"
-            >
-              ←
-            </button>
-            <button
-              aria-label="다음 트렌드"
-              className="grid h-9 w-9 place-items-center rounded-full border border-[#f4e3d7] bg-white text-gray-400 shadow-sm transition-colors hover:text-strawberry"
-            >
-              →
-            </button>
-          </div>
-        </div>
-        {hotTrends.length === 0 ? (
-          <p className="py-10 text-center text-sm text-gray-400">
-            아직 등록된 트렌드가 없어요
-          </p>
-        ) : (
-          <div className="grid gap-5 lg:grid-cols-[1fr_360px]">
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-              {hotTrends.map((trend) => (
-                <TrendCard key={trend.id} trend={trend} />
+
+          {feedTrends.length === 0 ? (
+            <p className="rounded-[28px] border border-[#f1dfd3] bg-[#fffdf9] py-16 text-center text-sm text-gray-400">
+              아직 등록된 트렌드가 없어요
+            </p>
+          ) : (
+            <div className="grid grid-cols-2 gap-4">
+              {feedTrends.map((trend) => (
+                <FeedCard key={trend.id} trend={trend} />
               ))}
             </div>
-            <RankingList trends={trends} />
-          </div>
-        )}
-      </section>
+          )}
+        </section>
 
-      <div className="grid gap-5 lg:grid-cols-[1fr_1.2fr]">
-        <WhyTrending trend={topTrendDetail?.trend} />
-        <TodayBriefing trends={trends.slice(0, 5)} />
+        <aside className="lg:sticky lg:top-20">
+          <RankingList trends={trends} />
+        </aside>
       </div>
 
       <NewsletterCta />

@@ -53,7 +53,7 @@ export default function TrendCard({
           sizes="(max-width: 768px) 50vw, 25vw"
           className="object-cover transition-transform duration-300 group-hover:scale-105"
         />
-        <span className="absolute left-2 top-2 grid h-9 w-9 place-items-center rounded-full bg-[#d81825] font-number text-lg font-bold text-white shadow-sm">
+        <span className="absolute left-2 top-2 grid h-9 w-9 place-items-center rounded-full bg-strawberry font-number text-lg font-bold text-white shadow-sm">
           {trend.rank}
         </span>
         <button
