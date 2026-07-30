@@ -68,6 +68,8 @@ interface Candidate {
   id: number;
   keyword: string;
   trend_id: number | null;
+  /** 최초 발굴 소스. 'editor'면 사람이 직접 넣은 것이라 품질 규칙을 면제한다 */
+  source: string;
   sources: string[];
   mention_count: number;
   search_index: string | null;
@@ -109,7 +111,7 @@ const CANDIDATE_SQL = `
     SELECT DISTINCT ON (keyword_id) keyword_id, value FROM keyword_metrics
      WHERE source_type='youtube' AND metric_type='view_velocity'
      ORDER BY keyword_id, collected_date DESC)
-  SELECT k.id, k.keyword, k.trend_id, k.sources, k.mention_count,
+  SELECT k.id, k.keyword, k.trend_id, k.source, k.sources, k.mention_count,
          li.value AS search_index,
          lg.value AS growth_rate,
          lmg.value AS mention_growth_rate,
@@ -295,7 +297,19 @@ export async function refreshAutoTrends(
   summary.retired = revalidated.retired;
   summary.restored = revalidated.restored;
 
-  const candidates = await query<Candidate>(CANDIDATE_SQL, [minIndex, minMentions, minSources]);
+  /*
+   * 후보에도 키워드 품질 규칙을 적용한다.
+   *
+   * revalidateAutoTrends가 실행 **시작 시점**에 돌고 그 뒤에 생성 루프가 도는데,
+   * 생성 쪽은 CANDIDATE_SQL만 보고 normalizeKeyword를 안 거쳤다. 그래서 방금
+   * 내린 카드를 같은 실행에서 곧바로 다시 만들었다 — '아임도넛', '빙수'가
+   * 계속 살아 있던 이유다. SQL로는 표현할 수 없는 규칙(브랜드명·형태 단어
+   * 단독·수식어 조합)이라 여기서 한 번 더 거른다.
+   */
+  const rawCandidates = await query<Candidate>(CANDIDATE_SQL, [minIndex, minMentions, minSources]);
+  const candidates = rawCandidates.filter(
+    (c) => c.source === 'editor' || normalizeKeyword(c.keyword) !== null
+  );
   summary.candidates = candidates.length;
 
   // 아직 카드가 없는 후보만 이번 실행에서 새로 만든다.
