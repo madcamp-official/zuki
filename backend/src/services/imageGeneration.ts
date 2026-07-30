@@ -39,6 +39,8 @@ const MARKETING_SUBJECT: Record<string, string> = {
     'A neatly arranged set of seasonal cafe merchandise: a tumbler and a tote bag',
   '레터링 케이크':
     'An elegant lettering cake (a round cake with delicate icing decoration, no readable text)',
+  '포토존':
+    'A charming cafe photo zone corner: a decorated wall backdrop with fairy lights and pastel balloons, a small stool and a floral arrangement, no people',
 };
 
 const MENU_PROMPT: Record<string, string> = {
@@ -82,6 +84,48 @@ const MENU_PROMPT: Record<string, string> = {
     'A soft chewy Korean bread roll, glossy golden surface, torn open to show a stretchy dense mochi-like interior',
   '120겹파이':
     'A dramatic mille-feuille made of many extremely thin, crisp golden pastry layers with light cream between them, cut as a neat rectangular slice',
+  '초코파이':
+    'A classic Korean choco pie: a round soft cake sandwich with marshmallow filling, fully coated in glossy dark chocolate, one bite taken to reveal the white marshmallow inside',
+  '아이스티':
+    'A tall glass of iced black tea, deep amber-red color, lots of ice cubes, a lemon slice on the rim, condensation on the glass',
+  '크리미라떼':
+    'An iced latte in a clear glass with an extra-thick layer of silky creamy milk foam on top, smooth espresso visible beneath',
+  '밀크티':
+    'A cup of milky Taiwanese-style milk tea, pale caramel-brown color, in a clear cup with visible tea swirl, no tapioca pearls',
+  '건강빵':
+    'A rustic multigrain health bread loaf, dense dark crust covered in visible oats, seeds and grains, sliced to show a hearty grainy crumb',
+  '감자빵':
+    'A round Korean potato bread: a soft pale bun shaped and dusted like a real potato with cocoa powder speckles, split open to reveal creamy potato-cheese filling',
+  '말차':
+    'A bowl of whisked Japanese matcha, vivid vibrant green frothy surface, traditional ceramic tea bowl, bamboo whisk resting beside it',
+  '녹차':
+    'A cup of brewed Korean green tea, clear pale-green liquid, simple white ceramic cup, a few loose tea leaves visible',
+  '아메리카노':
+    'A cup of iced americano, dark rich coffee over clear ice cubes in a tall glass, condensation on the glass, minimal styling',
+  '에그타르트':
+    'A classic Portuguese-style egg tart: flaky golden pastry shell filled with smooth custard, caramelized dark spots on top, one tart as the main subject',
+  '홍차':
+    'A cup of brewed black tea, deep reddish-amber color, elegant white teacup and saucer, a lemon wedge on the side',
+  '초코쿠키':
+    'A thick chewy double chocolate cookie, cracked glossy top, melted dark chocolate chunks visible, one cookie only',
+  '두바이초콜릿':
+    'Dubai chocolate bar, thick chocolate shell cut open to reveal bright green pistachio cream filling with crispy shredded kataifi pastry strands',
+  '애플파이':
+    'A classic American apple pie slice, golden lattice or crimped crust, cinnamon-spiced apple filling visible, warm and glossy',
+  '버블티':
+    'A cup of milk tea bubble tea with a thick layer of black tapioca pearls visible at the bottom through a clear plastic cup, wide straw',
+  '미트파이':
+    'A savory meat pie with a golden flaky crust, cut open to reveal a rich meat and gravy filling',
+  '생크림빵':
+    'A soft Korean cream bun: a plain milk bread roll split open and generously filled with plain whipped fresh cream, no fruit, dusted lightly with powdered sugar',
+  '흑임자 크림라떼':
+    'An iced black sesame cream latte in a clear glass, pale grey-purple color, thick whipped black sesame cream on top with a sprinkle of black sesame seeds',
+  '바닐라라떼':
+    'An iced vanilla latte in a clear glass, creamy pale coffee color, light vanilla bean flecks visible, condensation on the glass',
+  '요거트 아이스크림':
+    'A swirl of tangy soft-serve yogurt ice cream in a cup, pale creamy white color, topped with a few fresh berries',
+  '떡케이크':
+    'A Korean rice cake (tteok) styled as a layered celebration cake, soft white rice-cake tiers with pastel cream between layers, small fruit garnish on top',
   '딸기 크림 브리오슈':
     'Strawberry cream brioche toast stacked high with fresh strawberries, thick whipped cream overflowing, glossy strawberry syrup dripping down, powdered sugar',
   '말차 생크림 롤케이크':
