@@ -42,6 +42,46 @@ const MARKETING_SUBJECT: Record<string, string> = {
 };
 
 const MENU_PROMPT: Record<string, string> = {
+  // 실제 메뉴의 외형을 명시한다. 이름만 전달하면 모델이 신조어/지역명 메뉴를
+  // 일반 크루아상이나 라테로 오해하는 문제가 있어 카드 이미지마다 구체화했다.
+  '왁뿌소금빵':
+    'Korean salt bread (sogeumbbang): one small oval, plump laminated bread roll with a distinctly flat rounded-rectangle silhouette, golden butter-brown crust, visible flaky layers along its side, a few coarse sea-salt crystals on top. It is NOT a croissant: no crescent shape, no pointed tips, no twisted spiral layers',
+  '씬쿠키':
+    'A single ultra-thin, wide, crisp chocolate chip cookie with lacy caramelized edges and melted chocolate chunks',
+  '샌드베이글':
+    'A freshly cut sesame bagel sandwich stacked with cream cheese, smoked salmon, arugula, tomato, and thin red onion',
+  '황치즈칩쿠키':
+    'A thick golden-yellow cheddar cheese chip cookie, craggy crisp edge, visible melted cheese pieces, one cookie only',
+  '와그작케이크':
+    'A playful crunchy crumble cake slice, soft cream layers coated in chunky cookie crumbs and crisp cereal pieces',
+  '사라다빵':
+    'Classic Korean salad bread: a soft oblong milk-bread roll split open and generously filled with creamy potato salad, shredded cabbage, carrot and corn',
+  '크로플':
+    'A golden croffle: a croissant pressed in a waffle iron, square grid pattern with flaky pastry layers, topped with a small pat of butter',
+  '무화과 타르트':
+    'An elegant fig tart with a crisp butter pastry shell, vanilla custard, and fresh quartered purple figs',
+  '텐라떼':
+    'A clear glass of iced ten latte, espresso and pale milk visibly layered, lots of ice, soft cream foam',
+  '글레이즈드라떼':
+    'A clear iced latte with glossy vanilla glaze drizzled on the inside of the glass and a light whipped cream cap',
+  '우유빙수':
+    'Korean milk bingsu: a snowy mound of finely shaved milk ice in a ceramic bowl, topped with condensed milk and a small scoop of vanilla ice cream',
+  '신상아이스크림':
+    'A premium new-release soft serve ice cream swirl in a small pastel cup, colorful fruit garnish',
+  '쌀케이크':
+    'A Korean rice cake dessert: neat soft white rice-cake layers with a subtle pale cream filling and a small strawberry garnish',
+  '찰떡파이':
+    'A Korean chaltteok pie: round chocolate-coated cake with a chewy white mochi center visibly cut open',
+  '단팥빵':
+    'A round glossy Korean sweet red-bean bun, split open to reveal dense dark-red adzuki bean paste',
+  '땅콩빵':
+    'Korean peanut bread: a small peanut-shell-shaped golden cake, cut open to show creamy peanut filling',
+  '참붕어빵':
+    'Korean fish-shaped taiyaki pastry, golden crisp fish silhouette, one piece with red bean filling slightly visible',
+  '쫀득빵':
+    'A soft chewy Korean bread roll, glossy golden surface, torn open to show a stretchy dense mochi-like interior',
+  '120겹파이':
+    'A dramatic mille-feuille made of many extremely thin, crisp golden pastry layers with light cream between them, cut as a neat rectangular slice',
   '딸기 크림 브리오슈':
     'Strawberry cream brioche toast stacked high with fresh strawberries, thick whipped cream overflowing, glossy strawberry syrup dripping down, powdered sugar',
   '말차 생크림 롤케이크':
@@ -146,7 +186,13 @@ function getClient(): OpenAI {
     if (!apiKey) {
       throw new Error('OPENAI_API_KEY가 설정되지 않았습니다.');
     }
-    client = new OpenAI({ apiKey });
+    client = new OpenAI({
+      apiKey,
+      // 자동 생성은 수십 개를 순서대로 처리한다. 한 요청이 무한 대기하면
+      // 이후 카드 전부가 기본 이미지로 남기 때문에 항목 단위로 실패 처리한다.
+      timeout: Number(process.env.OPENAI_IMAGE_TIMEOUT_MS ?? 120_000),
+      maxRetries: 2,
+    });
   }
   return client;
 }
