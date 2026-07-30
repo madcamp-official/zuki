@@ -19,12 +19,12 @@ export default function HeroBanner({ trend }: { trend?: TrendItem }) {
             지금 뜨는 메뉴와 컨셉을 미리 알려드려요.
           </p>
           <div className="flex flex-wrap gap-3 pt-2">
-            <button className="flex items-center gap-2 rounded-full bg-strawberry px-6 py-3 font-button text-sm font-semibold text-white shadow-sm transition-transform hover:-translate-y-0.5">
+            <Link
+              href="/category"
+              className="flex items-center gap-2 rounded-full bg-strawberry px-6 py-3 font-button text-sm font-semibold text-white shadow-sm transition-transform hover:-translate-y-0.5"
+            >
               이번 주 브리핑 보기 <span aria-hidden>→</span>
-            </button>
-            <button className="rounded-full border border-strawberry/30 bg-white px-6 py-3 font-button text-sm font-semibold text-strawberry transition-transform hover:-translate-y-0.5">
-              서비스 둘러보기
-            </button>
+            </Link>
           </div>
         </div>
 
